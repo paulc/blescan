@@ -1,15 +1,77 @@
 use argh::FromArgs;
 use btleplug::api::{Central, CharPropFlags, Manager as _, Peripheral as _, ScanFilter};
-use btleplug::platform::{Manager, PeripheralId};
+use btleplug::platform::{Manager, Peripheral, PeripheralId};
+use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::time::Duration;
 use tokio::time;
+
+#[derive(Serialize, Deserialize)]
+struct DeviceInfo {
+    id: String,
+    name: String,
+    rssi: i16,
+    services: Vec<ServiceInfo>,
+}
+
+impl fmt::Display for DeviceInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{} | {} | {} dBm", self.id, self.name, self.rssi)?;
+        for s in &self.services {
+            write!(f, "{}", s)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ServiceInfo {
+    uuid: String,
+    characteristics: Vec<CharacteristicInfo>,
+}
+
+impl fmt::Display for ServiceInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "  Service: {} ({} characteristics)",
+            self.uuid,
+            self.characteristics.len()
+        )?;
+        for c in &self.characteristics {
+            write!(f, "{}", c)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CharacteristicInfo {
+    uuid: String,
+    properties: String,
+    char_type: String,
+    value: Option<String>,
+}
+
+impl fmt::Display for CharacteristicInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "    └─ Char: {} {}", self.uuid, self.properties)?;
+        if self.char_type != "Unknown/Custom" {
+            writeln!(f, "       Type: {}", self.char_type)?;
+        }
+        if let Some(ref value) = self.value {
+            writeln!(f, "       Value: {}", value)?;
+        }
+        Ok(())
+    }
+}
 
 #[derive(FromArgs)]
 /// Simple BLE scanner
 struct Args {
     /// scan without connecting/enumerating services (default)
     #[argh(switch, short = 's')]
-    scan: bool,
+    _scan: bool,
 
     /// enumerate services for device with given UUID
     #[argh(option, short = 'e')]
@@ -22,6 +84,10 @@ struct Args {
     /// read data from characteristic UUID (requires --enumerate)
     #[argh(option, short = 'r')]
     read: Option<String>,
+
+    /// output as JSON (suppresses info messages)
+    #[argh(switch, short = 'j')]
+    json: bool,
 }
 
 #[tokio::main]
@@ -39,60 +105,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .next()
         .ok_or("No Bluetooth adapter found")?;
 
-    if let Some(ref target_uuid) = args.enumerate {
-        println!("Connecting to {}...", target_uuid);
-
-        central.start_scan(ScanFilter::default()).await?;
-        time::sleep(Duration::from_secs(5)).await;
-        central.stop_scan().await?;
-
-        let target_id = PeripheralId::from(uuid::Uuid::parse_str(target_uuid)?);
-        let peripheral = central.peripheral(&target_id).await?;
-
-        let properties = peripheral.properties().await?.unwrap_or_default();
-        let name = properties
-            .local_name
-            .unwrap_or_else(|| "Unknown".to_string());
-        let rssi = properties.rssi.unwrap_or(0);
-
-        println!("{} | {} | {} dBm", target_uuid, name, rssi);
-
-        if let Some(ref char_uuid) = args.read {
-            read_characteristic(&peripheral, char_uuid).await?;
-        } else {
-            enumerate_services(&peripheral).await;
-        }
-
-        return Ok(());
-    }
-
-    println!("Starting BLE scan...");
+    // Need to scan to initialise BLE stack
     central.start_scan(ScanFilter::default()).await?;
     time::sleep(Duration::from_secs(5)).await;
     central.stop_scan().await?;
 
-    let peripherals = central.peripherals().await?;
-    println!("Found {} device(s)\n", peripherals.len());
+    if let Some(ref target_uuid) = args.enumerate {
+        // Enumerate target device
+        let target_id = PeripheralId::from(uuid::Uuid::parse_str(target_uuid)?);
+        let peripheral = central.peripheral(&target_id).await?;
 
-    let scan_only = args.scan || !args.enumerate_all;
-
-    for p in &peripherals {
-        let properties = p.properties().await?.unwrap_or_default();
-        let id = p.id();
-        let name = properties
-            .local_name
-            .clone()
-            .unwrap_or_else(|| "Unknown".to_string());
-        let rssi = properties.rssi.unwrap_or(0);
-
-        println!("{} | {} | {} dBm", id, name, rssi);
-
-        if scan_only {
-            continue;
+        if let Some(ref char_uuid) = args.read {
+            let mut device = get_device_info(&peripheral, false).await?;
+            let value = read_characteristic(&peripheral, char_uuid).await?;
+            device.services.push(value);
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&device)?);
+            } else {
+                println!("{}", device);
+            }
+        } else {
+            let device = get_device_info(&peripheral, true).await?;
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&device)?);
+            } else {
+                println!("{}", device);
+            }
         }
-
-        enumerate_services(p).await;
-        println!();
+    } else {
+        // Scan
+        let peripherals = central.peripherals().await?;
+        let mut devices = Vec::new();
+        for p in &peripherals {
+            devices.push(get_device_info(p, args.enumerate_all).await?);
+        }
+        if args.json {
+            println!("{}", serde_json::to_string_pretty(&devices)?);
+        } else {
+            for d in &devices {
+                println!("{}", d);
+            }
+        }
     }
 
     Ok(())
@@ -156,23 +209,23 @@ fn decode_value(uuid: uuid::Uuid, data: &[u8]) -> String {
 
     // Try to decode based on known types
     if standard_type.contains("uint8") && data.len() == 1 {
-        return format!("{} (uint8)", data[0]);
+        return format!("{}", data[0]);
     }
     if standard_type.contains("uint16") && data.len() == 2 {
         let val = u16::from_le_bytes([data[0], data[1]]);
-        return format!("{} (uint16 LE)", val);
+        return format!("{}", val);
     }
     if standard_type.contains("uint32") && data.len() == 4 {
         let val = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-        return format!("{} (uint32 LE)", val);
+        return format!("{}", val);
     }
     if standard_type.contains("float") && data.len() == 4 {
         let val = f32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-        return format!("{} (float32 LE)", val);
+        return format!("{}", val);
     }
     if standard_type.contains("UTF-8") || standard_type.contains("string") {
         if let Ok(s) = std::str::from_utf8(data) {
-            return format!("\"{}\" (UTF-8)", s.trim_end_matches('\0'));
+            return format!("{}", s.trim_end_matches('\0'));
         }
     }
 
@@ -184,87 +237,117 @@ fn decode_value(uuid: uuid::Uuid, data: &[u8]) -> String {
 async fn read_characteristic(
     p: &btleplug::platform::Peripheral,
     char_uuid_str: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<ServiceInfo, Box<dyn std::error::Error>> {
     match time::timeout(Duration::from_secs(5), p.connect()).await {
-        Ok(Ok(_)) => {
-            match time::timeout(Duration::from_secs(5), p.discover_services()).await {
-                Ok(Ok(_)) => {
-                    let char_uuid = parse_uuid(char_uuid_str)?;
+        Ok(Ok(_)) => match time::timeout(Duration::from_secs(5), p.discover_services()).await {
+            Ok(Ok(_)) => {
+                let char_uuid = parse_uuid(char_uuid_str)?;
 
-                    for service in p.services() {
-                        for char in &service.characteristics {
-                            if char.uuid == char_uuid {
-                                let char_type = get_characteristic_type(char_uuid);
-                                println!(
-                                    "Found characteristic {} in service {}",
-                                    char_uuid, service.uuid
-                                );
-                                println!("Type: {}", char_type);
+                for service in p.services() {
+                    for char in &service.characteristics {
+                        if char.uuid == char_uuid {
+                            let char_type = get_characteristic_type(char_uuid);
 
-                                if !char.properties.contains(CharPropFlags::READ) {
-                                    println!("Warning: characteristic does not support READ");
-                                }
-
-                                match time::timeout(Duration::from_secs(5), p.read(char)).await {
-                                    Ok(Ok(data)) => {
-                                        println!("Value: {}", decode_value(char_uuid, &data));
-                                    }
-                                    Ok(Err(e)) => println!("Read failed: {}", e),
-                                    Err(_) => println!("Read timed out"),
-                                }
-
-                                let _ = time::timeout(Duration::from_secs(3), p.disconnect()).await;
-                                return Ok(());
+                            if !char.properties.contains(CharPropFlags::READ) {
+                                return Err("Warning: characteristic does not support READ".into());
                             }
+
+                            let value =
+                                match time::timeout(Duration::from_secs(5), p.read(char)).await {
+                                    Ok(Ok(data)) => Some(decode_value(char_uuid, &data)),
+                                    _ => None,
+                                };
+
+                            let _ = time::timeout(Duration::from_secs(3), p.disconnect()).await;
+                            return Ok(ServiceInfo {
+                                uuid: service.uuid.to_string(),
+                                characteristics: vec![CharacteristicInfo {
+                                    uuid: char_uuid.to_string(),
+                                    properties: format_properties(char.properties),
+                                    char_type: char_type.to_string(),
+                                    value,
+                                }],
+                            });
                         }
                     }
-                    println!("Characteristic {} not found", char_uuid);
                 }
-                Ok(Err(e)) => println!("Service discovery failed: {}", e),
-                Err(_) => println!("Service discovery timed out"),
+                return Ok(ServiceInfo {
+                    uuid: "Not Found".to_string(),
+                    characteristics: vec![CharacteristicInfo {
+                        uuid: char_uuid.to_string(),
+                        properties: String::new(),
+                        char_type: "Not Found".to_string(),
+                        value: None,
+                    }],
+                });
             }
-            let _ = time::timeout(Duration::from_secs(3), p.disconnect()).await;
-        }
-        Ok(Err(e)) => println!("Connection failed: {}", e),
-        Err(_) => println!("Connection timed out"),
+            _ => {
+                let _ = time::timeout(Duration::from_secs(3), p.disconnect()).await;
+            }
+        },
+        _ => {}
     }
-    Ok(())
+    Err("Failed to read characteristic".into())
 }
 
-async fn enumerate_services(p: &btleplug::platform::Peripheral) {
+async fn get_device_info(
+    p: &Peripheral,
+    enumerate: bool,
+) -> Result<DeviceInfo, Box<dyn std::error::Error>> {
+    let properties = p.properties().await?.unwrap_or_default();
+    let id = p.id();
+    let name = properties
+        .local_name
+        .clone()
+        .unwrap_or_else(|| "Unknown".to_string());
+    let rssi = properties.rssi.unwrap_or(0);
+
+    Ok(DeviceInfo {
+        id: id.to_string(),
+        name: name.clone(),
+        rssi,
+        services: if enumerate {
+            enumerate_services(p).await?
+        } else {
+            Vec::new()
+        },
+    })
+}
+
+async fn enumerate_services(
+    p: &Peripheral,
+) -> Result<Vec<ServiceInfo>, Box<dyn std::error::Error>> {
+    let mut services = Vec::new();
+
     match time::timeout(Duration::from_secs(5), p.connect()).await {
         Ok(Ok(_)) => {
             match time::timeout(Duration::from_secs(5), p.discover_services()).await {
                 Ok(Ok(_)) => {
-                    let services = p.services();
-                    if services.is_empty() {
-                        println!("  (no services discovered)");
-                    } else {
-                        for service in services {
-                            println!(
-                                "  Service: {} ({} characteristics)",
-                                service.uuid,
-                                service.characteristics.len()
-                            );
-                            for char in &service.characteristics {
-                                let props = format_properties(char.properties);
-                                let char_type = get_characteristic_type(char.uuid);
-                                println!("    └─ Char: {} {}", char.uuid, props);
-                                if char_type != "Unknown/Custom" {
-                                    println!("        Type: {}", char_type);
-                                }
-                            }
+                    for service in p.services() {
+                        let mut chars = Vec::new();
+                        for char in &service.characteristics {
+                            let char_type = get_characteristic_type(char.uuid);
+                            chars.push(CharacteristicInfo {
+                                uuid: char.uuid.to_string(),
+                                properties: format_properties(char.properties),
+                                char_type: char_type.to_string(),
+                                value: None,
+                            });
                         }
+                        services.push(ServiceInfo {
+                            uuid: service.uuid.to_string(),
+                            characteristics: chars,
+                        });
                     }
                 }
-                Ok(Err(e)) => println!("  (service discovery failed: {})", e),
-                Err(_) => println!("  (service discovery timed out)"),
+                _ => {}
             }
             let _ = time::timeout(Duration::from_secs(3), p.disconnect()).await;
         }
-        Ok(Err(e)) => println!("  (connection failed: {})", e),
-        Err(_) => println!("  (connection timed out)"),
+        _ => {}
     }
+
+    Ok(services)
 }
 
 fn format_properties(props: CharPropFlags) -> String {
