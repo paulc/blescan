@@ -151,55 +151,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
-    if s.len() == 4 {
-        // 16-bit UUID like "2a19" -> "00002a19-0000-1000-8000-00805f9b34fb"
-        let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
-        uuid::Uuid::parse_str(&full)
-    } else {
-        uuid::Uuid::parse_str(s)
-    }
-}
-
-fn get_characteristic_type(uuid: uuid::Uuid) -> &'static str {
-    let uuid_str = uuid.to_string().to_lowercase();
-    // Extract the 16-bit portion from 128-bit UUIDs
-    let short = if uuid_str.ends_with("-0000-1000-8000-00805f9b34fb") {
-        &uuid_str[0..8] // "00002a19"
-    } else {
-        &uuid_str
-    };
-
-    // Standard Bluetooth SIG UUIDs
-    match short {
-        // Device Information
-        "00002a29" => "Manufacturer Name (UTF-8 string)",
-        "00002a24" => "Model Number (UTF-8 string)",
-        "00002a25" => "Serial Number (UTF-8 string)",
-        "00002a27" => "Hardware Revision (UTF-8 string)",
-        "00002a26" => "Firmware Revision (UTF-8 string)",
-        "00002a28" => "Software Revision (UTF-8 string)",
-        "00002a23" => "System ID (uint40+uint24)",
-
-        // Battery
-        "00002a19" => "Battery Level (uint8 %)",
-
-        // Generic Access
-        "00002a00" => "Device Name (UTF-8 string)",
-        "00002a01" => "Appearance (uint16)",
-        "00002a04" => "Peripheral Preferred Connection Params (uint16×4)",
-        "00002a05" => "Service Changed (uint16+uint16)",
-
-        // Common
-        "00002a1c" => "Temperature Measurement (flags+float)",
-        "00002a1d" => "Temperature Type (uint8 enum)",
-        "00002a1e" => "Intermediate Temperature (flags+float)",
-        "00002a21" => "Measurement Interval (uint16)",
-
-        _ => "Unknown/Custom",
-    }
-}
-
 fn decode_value(uuid: uuid::Uuid, data: &[u8]) -> String {
     if data.is_empty() {
         return "(empty)".to_string();
@@ -236,25 +187,25 @@ fn decode_value(uuid: uuid::Uuid, data: &[u8]) -> String {
 
 async fn read_characteristic(
     p: &btleplug::platform::Peripheral,
-    char_uuid_str: &str,
+    uuid_str: &str,
 ) -> Result<ServiceInfo, Box<dyn std::error::Error>> {
     match time::timeout(Duration::from_secs(5), p.connect()).await {
         Ok(Ok(_)) => match time::timeout(Duration::from_secs(5), p.discover_services()).await {
             Ok(Ok(_)) => {
-                let char_uuid = parse_uuid(char_uuid_str)?;
+                let uuid = parse_uuid(uuid_str)?;
 
                 for service in p.services() {
                     for char in &service.characteristics {
-                        if char.uuid == char_uuid {
-                            let char_type = get_characteristic_type(char_uuid);
+                        if char.uuid == uuid {
+                            let char_type = get_characteristic_type(uuid);
 
                             if !char.properties.contains(CharPropFlags::READ) {
-                                return Err("Warning: characteristic does not support READ".into());
+                                return Err("Characteristic does not support READ".into());
                             }
 
                             let value =
                                 match time::timeout(Duration::from_secs(5), p.read(char)).await {
-                                    Ok(Ok(data)) => Some(decode_value(char_uuid, &data)),
+                                    Ok(Ok(data)) => Some(decode_value(uuid, &data)),
                                     _ => None,
                                 };
 
@@ -262,7 +213,7 @@ async fn read_characteristic(
                             return Ok(ServiceInfo {
                                 uuid: service.uuid.to_string(),
                                 characteristics: vec![CharacteristicInfo {
-                                    uuid: char_uuid.to_string(),
+                                    uuid: uuid.to_string(),
                                     properties: format_properties(char.properties),
                                     char_type: char_type.to_string(),
                                     value,
@@ -271,15 +222,7 @@ async fn read_characteristic(
                         }
                     }
                 }
-                return Ok(ServiceInfo {
-                    uuid: "Not Found".to_string(),
-                    characteristics: vec![CharacteristicInfo {
-                        uuid: char_uuid.to_string(),
-                        properties: String::new(),
-                        char_type: "Not Found".to_string(),
-                        value: None,
-                    }],
-                });
+                return Err("Characteristic Not Found".into());
             }
             _ => {
                 let _ = time::timeout(Duration::from_secs(3), p.disconnect()).await;
@@ -348,6 +291,55 @@ async fn enumerate_services(
     }
 
     Ok(services)
+}
+
+fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
+    if s.len() == 4 {
+        // 16-bit UUID like "2a19" -> "00002a19-0000-1000-8000-00805f9b34fb"
+        let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
+        uuid::Uuid::parse_str(&full)
+    } else {
+        uuid::Uuid::parse_str(s)
+    }
+}
+
+fn get_characteristic_type(uuid: uuid::Uuid) -> &'static str {
+    let uuid_str = uuid.to_string().to_lowercase();
+    // Extract the 16-bit portion from 128-bit UUIDs
+    let short = if uuid_str.ends_with("-0000-1000-8000-00805f9b34fb") {
+        &uuid_str[0..8] // "00002a19"
+    } else {
+        &uuid_str
+    };
+
+    // Standard Bluetooth SIG UUIDs
+    match short {
+        // Device Information
+        "00002a29" => "Manufacturer Name (UTF-8 string)",
+        "00002a24" => "Model Number (UTF-8 string)",
+        "00002a25" => "Serial Number (UTF-8 string)",
+        "00002a27" => "Hardware Revision (UTF-8 string)",
+        "00002a26" => "Firmware Revision (UTF-8 string)",
+        "00002a28" => "Software Revision (UTF-8 string)",
+        "00002a23" => "System ID (uint40+uint24)",
+
+        // Battery
+        "00002a19" => "Battery Level (uint8 %)",
+
+        // Generic Access
+        "00002a00" => "Device Name (UTF-8 string)",
+        "00002a01" => "Appearance (uint16)",
+        "00002a04" => "Peripheral Preferred Connection Params (uint16×4)",
+        "00002a05" => "Service Changed (uint16+uint16)",
+
+        // Common
+        "00002a1c" => "Temperature Measurement (flags+float)",
+        "00002a1d" => "Temperature Type (uint8 enum)",
+        "00002a1e" => "Intermediate Temperature (flags+float)",
+        "00002a21" => "Measurement Interval (uint16)",
+
+        _ => "Unknown/Custom",
+    }
 }
 
 fn format_properties(props: CharPropFlags) -> String {
