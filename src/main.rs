@@ -1,12 +1,20 @@
-use argh::FromArgs;
-use btleplug::api::{Central, CharPropFlags, Manager as _, Peripheral as _, ScanFilter};
-use btleplug::platform::{Manager, Peripheral, PeripheralId};
-use serde::{Deserialize, Serialize};
-use std::fmt;
+use anyhow::{anyhow, Context};
+use btleplug::api::{
+    bleuuid::BleUuid, Central, CentralEvent, CharPropFlags, Manager as _, Peripheral as _,
+    ScanFilter,
+};
+use btleplug::platform::{Manager, Peripheral};
+use futures::StreamExt;
+use hex;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::HashSet;
 use std::time::Duration;
-use tokio::time;
+use tokio::time::timeout;
+use uuid::Uuid;
 
-#[derive(Serialize, Deserialize)]
+use argh::FromArgs;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct DeviceInfo {
     id: String,
     name: String,
@@ -14,8 +22,8 @@ struct DeviceInfo {
     services: Vec<ServiceInfo>,
 }
 
-impl fmt::Display for DeviceInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for DeviceInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{} | {} | {} dBm", self.id, self.name, self.rssi)?;
         for s in &self.services {
             write!(f, "{}", s)?;
@@ -24,219 +32,209 @@ impl fmt::Display for DeviceInfo {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ServiceInfo {
     uuid: String,
     characteristics: Vec<CharacteristicInfo>,
 }
 
-impl fmt::Display for ServiceInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
-            f,
-            "  Service: {} ({} characteristics)",
-            self.uuid,
-            self.characteristics.len()
-        )?;
-        for c in &self.characteristics {
-            write!(f, "{}", c)?;
+impl std::fmt::Display for ServiceInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.characteristics.is_empty() {
+            writeln!(f, "    Service: {}", self.uuid,)?;
+        } else {
+            writeln!(
+                f,
+                "    Service: {} ({} characteristics)",
+                self.uuid,
+                self.characteristics.len()
+            )?;
+            for c in &self.characteristics {
+                write!(f, "{}", c)?;
+            }
         }
         Ok(())
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct CharacteristicInfo {
     uuid: String,
     properties: String,
     char_type: String,
-    value: Option<String>,
+    #[serde(serialize_with = "serialize_hex", deserialize_with = "deserialize_hex")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<Vec<u8>>,
 }
 
-impl fmt::Display for CharacteristicInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for CharacteristicInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "    └─ Char: {} {}", self.uuid, self.properties)?;
         if self.char_type != "Unknown/Custom" {
             writeln!(f, "       Type: {}", self.char_type)?;
         }
         if let Some(ref value) = self.value {
-            writeln!(f, "       Value: {}", value)?;
+            writeln!(f, "       Value: 0x{}", hex::encode(value))?;
         }
         Ok(())
     }
 }
 
+fn serialize_hex<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match bytes {
+        Some(v) => {
+            let hex = format!("0x{}", hex::encode(v));
+            serializer.serialize_str(&hex)
+        }
+        None => serializer.serialize_none(),
+    }
+}
+
+fn deserialize_hex<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    match opt {
+        Some(s) => hex::decode(s).map(Some).map_err(serde::de::Error::custom),
+        None => Ok(None),
+    }
+}
+
+const ENUMERATE_TIMEOUT: u64 = 5;
+const CONNECT_TIMEOUT: u64 = 5;
+const DISCONNECT_TIMEOUT: u64 = 5;
+
 #[derive(FromArgs)]
 /// Simple BLE scanner
 struct Args {
-    /// scan without connecting/enumerating services (default)
-    #[argh(switch, short = 's')]
-    _scan: bool,
+    /// scan timeout
+    #[argh(option, short = 't')]
+    timeout: Option<u64>,
 
-    /// enumerate services for device with given UUID
-    #[argh(option, short = 'e')]
-    enumerate: Option<String>,
+    /// enumerate services
+    #[argh(switch, short = 'e')]
+    enumerate: bool,
 
-    /// scan and enumerate all devices
-    #[argh(switch, short = 'a')]
-    enumerate_all: bool,
-
-    /// read data from characteristic UUID (requires --enumerate)
-    #[argh(option, short = 'r')]
-    read: Option<String>,
-
-    /// output as JSON (suppresses info messages)
+    /// NDJSON output
     #[argh(switch, short = 'j')]
     json: bool,
+
+    /// filter service uuid [multiple allowed]
+    #[argh(option, short = 'f')]
+    filter: Vec<String>,
+
+    /// read characteristic data
+    #[argh(switch, short = 'r')]
+    read: bool,
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
+    // Get args
     let args: Args = argh::from_env();
 
-    if args.read.is_some() && args.enumerate.is_none() {
-        return Err("--read requires --enumerate".into());
-    }
+    // Convert filter to Uuid
+    let _filter = args
+        .filter
+        .iter()
+        .map(|s| parse_uuid(s))
+        .collect::<Result<HashSet<Uuid>, _>>()
+        .context("Error Parsing UUID")?;
 
+    // Initialise Bluetooth
     let manager = Manager::new().await?;
     let adapters = manager.adapters().await?;
     let central = adapters
         .into_iter()
         .next()
-        .ok_or("No Bluetooth adapter found")?;
+        .ok_or(anyhow!("No Bluetooth adapters found"))?;
 
-    // Need to scan to initialise BLE stack
+    // ScanFilter service filter doesnt seem to work?
     central.start_scan(ScanFilter::default()).await?;
-    time::sleep(Duration::from_secs(5)).await;
-    central.stop_scan().await?;
+    let mut seen = HashSet::new();
 
-    if let Some(ref target_uuid) = args.enumerate {
-        // Enumerate target device
-        let target_id = PeripheralId::from(uuid::Uuid::parse_str(target_uuid)?);
-        let peripheral = central.peripheral(&target_id).await?;
+    let scan = async {
+        let mut events = central.events().await?;
+        while let Some(event) = events.next().await {
+            // Check if the event is a device discovery
+            match event {
+                CentralEvent::DeviceDiscovered(id) => {
+                    if !seen.insert(id.clone()) {
+                        continue;
+                    }
+                    match central.peripheral(&id).await {
+                        Ok(peripheral) => {
+                            // Get basic info first (fast)
+                            let device = get_device_info(&peripheral, false, false).await?;
+                            if args.enumerate {
+                                // Spawn enumeration in background so we don't block events
+                                let json = args.json;
+                                tokio::spawn(async move {
+                                    match enumerate_services(&peripheral, args.read).await {
+                                        Ok(services) => {
+                                            let full_device = DeviceInfo { services, ..device };
+                                            if json {
+                                                println!(
+                                                    "{}",
+                                                    serde_json::to_string_pretty(&full_device)
+                                                        .unwrap()
+                                                );
+                                            } else {
+                                                print!("[+] Discovered: {}", full_device);
+                                            }
+                                        }
+                                        Err(e) => eprintln!("Enumeration error: {:?}", e),
+                                    }
+                                    let _ =
+                                        timeout(Duration::from_secs(3), peripheral.disconnect())
+                                            .await;
+                                });
+                            } else {
+                                if args.json {
+                                    println!("{}", serde_json::to_string_pretty(&device)?);
+                                } else {
+                                    print!("[+] Discovered: {}", device);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error retrieving peripheral: {:?}", e);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok::<(), anyhow::Error>(())
+    };
 
-        if let Some(ref char_uuid) = args.read {
-            let mut device = get_device_info(&peripheral, false).await?;
-            let value = read_characteristic(&peripheral, char_uuid).await?;
-            device.services.push(value);
-            if args.json {
-                println!("{}", serde_json::to_string_pretty(&device)?);
-            } else {
-                println!("{}", device);
-            }
-        } else {
-            let device = get_device_info(&peripheral, true).await?;
-            if args.json {
-                println!("{}", serde_json::to_string_pretty(&device)?);
-            } else {
-                println!("{}", device);
-            }
+    if let Some(t) = args.timeout {
+        if !args.json {
+            println!("Listening for BLE advertisements: Timeout {t} secs");
+        }
+        match timeout(Duration::from_secs(t), scan).await {
+            Ok(result) => result.map_err(|e| anyhow!("Scan Error: {e}"))?,
+            Err(_) => println!("\n[!] Timeout reached. Stopping scan."),
         }
     } else {
-        // Scan
-        let peripherals = central.peripherals().await?;
-        let mut devices = Vec::new();
-        for p in &peripherals {
-            devices.push(get_device_info(p, args.enumerate_all).await?);
+        if !args.json {
+            println!("Listening for BLE advertisements: Ctrl+C to stop");
         }
-        if args.json {
-            println!("{}", serde_json::to_string_pretty(&devices)?);
-        } else {
-            for d in &devices {
-                println!("{}", d);
-            }
-        }
+        scan.await.map_err(|e| anyhow!("Scan Error: {e}"))?
     }
 
     Ok(())
 }
 
-fn decode_value(uuid: uuid::Uuid, data: &[u8]) -> String {
-    if data.is_empty() {
-        return "(empty)".to_string();
-    }
-
-    let standard_type = get_characteristic_type(uuid);
-
-    // Try to decode based on known types
-    if standard_type.contains("uint8") && data.len() == 1 {
-        return format!("{}", data[0]);
-    }
-    if standard_type.contains("uint16") && data.len() == 2 {
-        let val = u16::from_le_bytes([data[0], data[1]]);
-        return format!("{}", val);
-    }
-    if standard_type.contains("uint32") && data.len() == 4 {
-        let val = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-        return format!("{}", val);
-    }
-    if standard_type.contains("float") && data.len() == 4 {
-        let val = f32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-        return format!("{}", val);
-    }
-    if standard_type.contains("UTF-8") || standard_type.contains("string") {
-        if let Ok(s) = std::str::from_utf8(data) {
-            return format!("{}", s.trim_end_matches('\0'));
-        }
-    }
-
-    // Fallback to hex
-    let hex: String = data.iter().map(|b| format!("{:02x}", b)).collect();
-    format!("0x{} ({} bytes)", hex, data.len())
-}
-
-async fn read_characteristic(
-    p: &btleplug::platform::Peripheral,
-    uuid_str: &str,
-) -> Result<ServiceInfo, Box<dyn std::error::Error>> {
-    match time::timeout(Duration::from_secs(5), p.connect()).await {
-        Ok(Ok(_)) => match time::timeout(Duration::from_secs(5), p.discover_services()).await {
-            Ok(Ok(_)) => {
-                let uuid = parse_uuid(uuid_str)?;
-
-                for service in p.services() {
-                    for char in &service.characteristics {
-                        if char.uuid == uuid {
-                            let char_type = get_characteristic_type(uuid);
-
-                            if !char.properties.contains(CharPropFlags::READ) {
-                                return Err("Characteristic does not support READ".into());
-                            }
-
-                            let value =
-                                match time::timeout(Duration::from_secs(5), p.read(char)).await {
-                                    Ok(Ok(data)) => Some(decode_value(uuid, &data)),
-                                    _ => None,
-                                };
-
-                            let _ = time::timeout(Duration::from_secs(3), p.disconnect()).await;
-                            return Ok(ServiceInfo {
-                                uuid: service.uuid.to_string(),
-                                characteristics: vec![CharacteristicInfo {
-                                    uuid: uuid.to_string(),
-                                    properties: format_properties(char.properties),
-                                    char_type: char_type.to_string(),
-                                    value,
-                                }],
-                            });
-                        }
-                    }
-                }
-                return Err("Characteristic Not Found".into());
-            }
-            _ => {
-                let _ = time::timeout(Duration::from_secs(3), p.disconnect()).await;
-            }
-        },
-        _ => {}
-    }
-    Err("Failed to read characteristic".into())
-}
-
 async fn get_device_info(
     p: &Peripheral,
     enumerate: bool,
-) -> Result<DeviceInfo, Box<dyn std::error::Error>> {
+    read: bool,
+) -> anyhow::Result<DeviceInfo> {
     let properties = p.properties().await?.unwrap_or_default();
     let id = p.id();
     let name = properties
@@ -244,102 +242,62 @@ async fn get_device_info(
         .clone()
         .unwrap_or_else(|| "Unknown".to_string());
     let rssi = properties.rssi.unwrap_or(0);
-
+    let services = if enumerate {
+        enumerate_services(p, read).await?
+    } else {
+        properties
+            .services
+            .iter()
+            .map(|uuid| ServiceInfo {
+                uuid: uuid.to_short_string(),
+                characteristics: Vec::new(),
+            })
+            .collect::<Vec<_>>()
+    };
     Ok(DeviceInfo {
         id: id.to_string(),
         name: name.clone(),
         rssi,
-        services: if enumerate {
-            enumerate_services(p).await?
-        } else {
-            Vec::new()
-        },
+        services,
     })
 }
 
-async fn enumerate_services(
-    p: &Peripheral,
-) -> Result<Vec<ServiceInfo>, Box<dyn std::error::Error>> {
+async fn enumerate_services(p: &Peripheral, read: bool) -> anyhow::Result<Vec<ServiceInfo>> {
     let mut services = Vec::new();
-
-    match time::timeout(Duration::from_secs(5), p.connect()).await {
+    match timeout(Duration::from_secs(ENUMERATE_TIMEOUT), p.connect()).await {
         Ok(Ok(_)) => {
-            match time::timeout(Duration::from_secs(5), p.discover_services()).await {
+            match timeout(Duration::from_secs(CONNECT_TIMEOUT), p.discover_services()).await {
                 Ok(Ok(_)) => {
                     for service in p.services() {
                         let mut chars = Vec::new();
                         for char in &service.characteristics {
-                            let char_type = get_characteristic_type(char.uuid);
                             chars.push(CharacteristicInfo {
-                                uuid: char.uuid.to_string(),
+                                uuid: char.uuid.to_short_string(),
                                 properties: format_properties(char.properties),
-                                char_type: char_type.to_string(),
-                                value: None,
+                                char_type: "Unknown/Custom".to_string(),
+                                value: if read && char.properties.contains(CharPropFlags::READ) {
+                                    p.read(char).await.ok()
+                                } else {
+                                    None
+                                },
                             });
                         }
                         services.push(ServiceInfo {
-                            uuid: service.uuid.to_string(),
+                            uuid: service.uuid.to_short_string(),
                             characteristics: chars,
                         });
                     }
                 }
                 _ => {}
             }
-            let _ = time::timeout(Duration::from_secs(3), p.disconnect()).await;
+            if let Err(e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), p.disconnect()).await {
+                eprintln!("Disconnect timeout/error for {}: {:?}", p.id(), e);
+            }
         }
         _ => {}
     }
 
     Ok(services)
-}
-
-fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
-    if s.len() == 4 {
-        // 16-bit UUID like "2a19" -> "00002a19-0000-1000-8000-00805f9b34fb"
-        let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
-        uuid::Uuid::parse_str(&full)
-    } else {
-        uuid::Uuid::parse_str(s)
-    }
-}
-
-fn get_characteristic_type(uuid: uuid::Uuid) -> &'static str {
-    let uuid_str = uuid.to_string().to_lowercase();
-    // Extract the 16-bit portion from 128-bit UUIDs
-    let short = if uuid_str.ends_with("-0000-1000-8000-00805f9b34fb") {
-        &uuid_str[0..8] // "00002a19"
-    } else {
-        &uuid_str
-    };
-
-    // Standard Bluetooth SIG UUIDs
-    match short {
-        // Device Information
-        "00002a29" => "Manufacturer Name (UTF-8 string)",
-        "00002a24" => "Model Number (UTF-8 string)",
-        "00002a25" => "Serial Number (UTF-8 string)",
-        "00002a27" => "Hardware Revision (UTF-8 string)",
-        "00002a26" => "Firmware Revision (UTF-8 string)",
-        "00002a28" => "Software Revision (UTF-8 string)",
-        "00002a23" => "System ID (uint40+uint24)",
-
-        // Battery
-        "00002a19" => "Battery Level (uint8 %)",
-
-        // Generic Access
-        "00002a00" => "Device Name (UTF-8 string)",
-        "00002a01" => "Appearance (uint16)",
-        "00002a04" => "Peripheral Preferred Connection Params (uint16×4)",
-        "00002a05" => "Service Changed (uint16+uint16)",
-
-        // Common
-        "00002a1c" => "Temperature Measurement (flags+float)",
-        "00002a1d" => "Temperature Type (uint8 enum)",
-        "00002a1e" => "Intermediate Temperature (flags+float)",
-        "00002a21" => "Measurement Interval (uint16)",
-
-        _ => "Unknown/Custom",
-    }
 }
 
 fn format_properties(props: CharPropFlags) -> String {
@@ -360,4 +318,14 @@ fn format_properties(props: CharPropFlags) -> String {
         p.push("Indicate");
     }
     format!("[{}]", p.join(","))
+}
+
+fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
+    if s.len() == 4 {
+        // 16-bit UUID like "2a19" -> "00002a19-0000-1000-8000-00805f9b34fb"
+        let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
+        uuid::Uuid::parse_str(&full)
+    } else {
+        uuid::Uuid::parse_str(s)
+    }
 }
