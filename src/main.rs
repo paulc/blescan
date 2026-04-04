@@ -99,7 +99,10 @@ where
 {
     let opt: Option<String> = Option::deserialize(deserializer)?;
     match opt {
-        Some(s) => hex::decode(s).map(Some).map_err(serde::de::Error::custom),
+        Some(s) => {
+            let s = s.strip_prefix("0x").unwrap_or(&s);
+            hex::decode(s).map(Some).map_err(serde::de::Error::custom)
+        }
         None => Ok(None),
     }
 }
@@ -126,6 +129,10 @@ struct Args {
     /// NDJSON output
     #[argh(switch, short = 'j')]
     json: bool,
+
+    /// compact JSON output
+    #[argh(switch)]
+    compact: bool,
 
     /// filter service uuid [multiple allowed]
     #[argh(option, short = 'f')]
@@ -173,9 +180,10 @@ async fn main() -> anyhow::Result<()> {
             // Check if the event is a device discovery
             match event {
                 CentralEvent::DeviceDiscovered(id) => {
-                    if !seen.insert(id.clone()) {
+                    if seen.contains(&id) {
                         continue;
                     }
+                    seen.insert(id.clone());
                     match central.peripheral(&id).await {
                         Ok(peripheral) => {
                             // Get basic info first (fast)
@@ -199,8 +207,9 @@ async fn main() -> anyhow::Result<()> {
                                                 let services = services
                                                     .into_iter()
                                                     .filter(|s| {
-                                                        filter
-                                                            .contains(&parse_uuid(&s.uuid).unwrap())
+                                                        parse_uuid(&s.uuid)
+                                                            .map(|uuid| filter.contains(&uuid))
+                                                            .unwrap_or(false)
                                                     })
                                                     .collect::<Vec<_>>();
                                                 if services.is_empty() {
@@ -214,8 +223,11 @@ async fn main() -> anyhow::Result<()> {
                                                 if json {
                                                     println!(
                                                         "{}",
-                                                        serde_json::to_string_pretty(&device)
-                                                            .unwrap()
+                                                        if args.compact {
+                                                            serde_json::to_string(&device)?
+                                                        } else {
+                                                            serde_json::to_string_pretty(&device)?
+                                                        }
                                                     );
                                                 } else {
                                                     print!("[+] Discovered: {}", device);
@@ -229,10 +241,18 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         Err(e) => eprintln!("Enumeration error: {:?}", e),
                                     };
+                                    Ok::<(), anyhow::Error>(())
                                 });
                             } else {
                                 if args.json {
-                                    println!("{}", serde_json::to_string_pretty(&device)?);
+                                    println!(
+                                        "{}",
+                                        if args.compact {
+                                            serde_json::to_string(&device)?
+                                        } else {
+                                            serde_json::to_string_pretty(&device)?
+                                        }
+                                    );
                                 } else {
                                     print!("[+] Discovered: {}", device);
                                 }
@@ -296,7 +316,7 @@ async fn get_device_info(
     };
     Ok(DeviceInfo {
         id: id.to_string(),
-        name: name.clone(),
+        name: name,
         rssi,
         services,
     })
