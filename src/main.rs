@@ -119,6 +119,10 @@ struct Args {
     #[argh(switch, short = 'e')]
     enumerate: bool,
 
+    /// read characteristic data
+    #[argh(switch, short = 'r')]
+    read: bool,
+
     /// NDJSON output
     #[argh(switch, short = 'j')]
     json: bool,
@@ -127,9 +131,9 @@ struct Args {
     #[argh(option, short = 'f')]
     filter: Vec<String>,
 
-    /// read characteristic data
-    #[argh(switch, short = 'r')]
-    read: bool,
+    /// minimum RSSI
+    #[argh(option)]
+    rssi: Option<i16>,
 }
 
 #[tokio::main]
@@ -170,6 +174,11 @@ async fn main() -> anyhow::Result<()> {
                         Ok(peripheral) => {
                             // Get basic info first (fast)
                             let device = get_device_info(&peripheral, false, false).await?;
+                            if let Some(rssi) = args.rssi {
+                                if device.rssi < rssi {
+                                    continue;
+                                }
+                            }
                             if args.enumerate {
                                 // Spawn enumeration in background so we don't block events
                                 let json = args.json;
