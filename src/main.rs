@@ -141,8 +141,12 @@ async fn main() -> anyhow::Result<()> {
     // Get args
     let args: Args = argh::from_env();
 
-    // Convert filter to Uuid
-    let _filter = args
+    if (args.read || !args.filter.is_empty()) && !args.enumerate {
+        anyhow::bail!("--filter/--read require --enumerate");
+    }
+
+    // Convert filter to HashSet<Uuid>
+    let service_filter = args
         .filter
         .iter()
         .map(|s| parse_uuid(s))
@@ -157,7 +161,9 @@ async fn main() -> anyhow::Result<()> {
         .next()
         .ok_or(anyhow!("No Bluetooth adapters found"))?;
 
-    // ScanFilter service filter doesnt seem to work?
+    // ScanFilter only checks for services in the Advertisement
+    // payload which tend to be very limited (31 bytes max) rather
+    // then the full list of GATT services (which need connection)
     central.start_scan(ScanFilter::default()).await?;
     let mut seen = HashSet::new();
 
@@ -182,25 +188,47 @@ async fn main() -> anyhow::Result<()> {
                             if args.enumerate {
                                 // Spawn enumeration in background so we don't block events
                                 let json = args.json;
+                                let filter = service_filter.clone();
                                 tokio::spawn(async move {
                                     match enumerate_services(&peripheral, args.read).await {
                                         Ok(services) => {
-                                            let full_device = DeviceInfo { services, ..device };
-                                            if json {
-                                                println!(
-                                                    "{}",
-                                                    serde_json::to_string_pretty(&full_device)
-                                                        .unwrap()
-                                                );
+                                            // Filter services
+                                            let device = if filter.is_empty() {
+                                                Some(DeviceInfo { services, ..device })
                                             } else {
-                                                print!("[+] Discovered: {}", full_device);
+                                                let services = services
+                                                    .into_iter()
+                                                    .filter(|s| {
+                                                        filter
+                                                            .contains(&parse_uuid(&s.uuid).unwrap())
+                                                    })
+                                                    .collect::<Vec<_>>();
+                                                if services.is_empty() {
+                                                    None
+                                                } else {
+                                                    Some(DeviceInfo { services, ..device })
+                                                }
+                                            };
+                                            // Only return result if we have a match (or no filter)
+                                            if let Some(device) = device {
+                                                if json {
+                                                    println!(
+                                                        "{}",
+                                                        serde_json::to_string_pretty(&device)
+                                                            .unwrap()
+                                                    );
+                                                } else {
+                                                    print!("[+] Discovered: {}", device);
+                                                }
                                             }
+                                            let _ = timeout(
+                                                Duration::from_secs(3),
+                                                peripheral.disconnect(),
+                                            )
+                                            .await;
                                         }
                                         Err(e) => eprintln!("Enumeration error: {:?}", e),
-                                    }
-                                    let _ =
-                                        timeout(Duration::from_secs(3), peripheral.disconnect())
-                                            .await;
+                                    };
                                 });
                             } else {
                                 if args.json {
@@ -254,6 +282,9 @@ async fn get_device_info(
     let services = if enumerate {
         enumerate_services(p, read).await?
     } else {
+        // Reads basic service data from the advertisment
+        // but this may miss some services (only advertised
+        // intermittently)
         properties
             .services
             .iter()
@@ -331,7 +362,12 @@ fn format_properties(props: CharPropFlags) -> String {
 
 fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
     if s.len() == 4 {
-        // 16-bit UUID like "2a19" -> "00002a19-0000-1000-8000-00805f9b34fb"
+        // 16-bit UUID: "2a19" -> "00002a19-0000-1000-8000-00805f9b34fb"
+        let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
+        uuid::Uuid::parse_str(&full)
+    } else if s.len() == 6 {
+        // 16-bit UUID: "0x2a19" -> "00002a19-0000-1000-8000-00805f9b34fb"
+        let s = &s[2..];
         let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
         uuid::Uuid::parse_str(&full)
     } else {
