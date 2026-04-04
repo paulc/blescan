@@ -100,7 +100,7 @@ where
     let opt: Option<String> = Option::deserialize(deserializer)?;
     match opt {
         Some(s) => {
-            let s = s.strip_prefix("0x").unwrap_or(&s);
+            let s = s.strip_prefix("0x").unwrap_or(&s); // Strip 0x
             hex::decode(s).map(Some).map_err(serde::de::Error::custom)
         }
         None => Ok(None),
