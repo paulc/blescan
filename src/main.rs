@@ -165,6 +165,10 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("--filter/--read require --enumerate");
     }
 
+    if args.compact && !args.json {
+        anyhow::bail!("--compact requires --json");
+    }
+
     // Convert filter to HashSet<Uuid>
     let service_filter = args
         .filter
@@ -347,13 +351,13 @@ async fn enumerate_services(
                         });
                     }
                 }
-                _ => {}
+                _ => eprintln!("Service discovery failed/timeout for {}", p.id()),
             }
             if let Err(e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), p.disconnect()).await {
                 eprintln!("Disconnect timeout/error for {}: {:?}", p.id(), e);
             }
         }
-        _ => {}
+        _ => eprintln!("Connect timeout/error for {}", p.id()),
     }
     if service_info.is_empty() && !filter.is_empty() {
         Ok(None)
@@ -364,6 +368,9 @@ async fn enumerate_services(
 
 fn format_properties(props: CharPropFlags) -> String {
     let mut p = Vec::new();
+    if props.contains(CharPropFlags::BROADCAST) {
+        p.push("Broadcast");
+    }
     if props.contains(CharPropFlags::READ) {
         p.push("Read");
     }
@@ -371,7 +378,7 @@ fn format_properties(props: CharPropFlags) -> String {
         p.push("Write");
     }
     if props.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE) {
-        p.push("WriteNoResponse");
+        p.push("WriteNoResp");
     }
     if props.contains(CharPropFlags::NOTIFY) {
         p.push("Notify");
@@ -379,17 +386,19 @@ fn format_properties(props: CharPropFlags) -> String {
     if props.contains(CharPropFlags::INDICATE) {
         p.push("Indicate");
     }
+    if props.contains(CharPropFlags::AUTHENTICATED_SIGNED_WRITES) {
+        p.push("AuthSignedWrite");
+    }
     format!("[{}]", p.join(","))
 }
 
 fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
     if s.len() == 4 {
-        // 16-bit UUID
+        // 8-bit UUID
         let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
         uuid::Uuid::parse_str(&full)
     } else if s.len() == 6 && s.starts_with("0x") {
-        // 16-bit UUID (0x prexfix):w
-
+        // 8-bit UUID (0x prexfix)
         let s = &s[2..];
         let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
         uuid::Uuid::parse_str(&full)

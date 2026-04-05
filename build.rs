@@ -6,6 +6,7 @@ use std::path::Path;
 #[derive(Debug, Deserialize)]
 struct UuidEntry {
     uuid: String,
+    #[allow(unused)]
     name: String,
     #[allow(unused)]
     id: String,
@@ -42,7 +43,7 @@ static SERVICE_MAP: std::sync::LazyLock<std::collections::HashMap<uuid::Uuid,&'s
     for entry in service_db.uuids.iter() {
         map.push_str(&format!(
             "            (parse_uuid(\"{}\").unwrap(),\"{}\"),\n",
-            entry.uuid, entry.name
+            entry.uuid, entry.id
         ));
     }
     map.push_str(
@@ -67,7 +68,7 @@ static CHARACTERISTIC_MAP: std::sync::LazyLock<std::collections::HashMap<uuid::U
     for entry in characteristic_db.uuids.iter() {
         map.push_str(&format!(
             "            (parse_uuid(\"{}\").unwrap(),\"{}\"),\n",
-            entry.uuid, entry.name
+            entry.uuid, entry.id
         ));
     }
     map.push_str(
