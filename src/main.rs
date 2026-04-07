@@ -144,12 +144,16 @@ struct Args {
     json: bool,
 
     /// compact JSON output
-    #[argh(switch)]
+    #[argh(switch, short = 'c')]
     compact: bool,
+
+    /// filter device name [multiple allowed]
+    #[argh(option, short = 'n')]
+    name: Vec<String>,
 
     /// filter service uuid [multiple allowed]
     #[argh(option, short = 'f')]
-    filter: Vec<String>,
+    service: Vec<String>,
 
     /// minimum RSSI
     #[argh(option)]
@@ -161,17 +165,17 @@ async fn main() -> anyhow::Result<()> {
     // Get args
     let args: Args = argh::from_env();
 
-    if (args.read || !args.filter.is_empty()) && !args.enumerate {
-        anyhow::bail!("--filter/--read require --enumerate");
+    if (args.read || !args.service.is_empty()) && !args.enumerate {
+        anyhow::bail!("--service/--read require --enumerate");
     }
 
     if args.compact && !args.json {
         anyhow::bail!("--compact requires --json");
     }
 
-    // Convert filter to HashSet<Uuid>
+    // Convert service to HashSet<Uuid>
     let service_filter = args
-        .filter
+        .service
         .iter()
         .map(|s| parse_uuid(s))
         .collect::<Result<HashSet<Uuid>, _>>()
@@ -205,21 +209,26 @@ async fn main() -> anyhow::Result<()> {
                         Ok(peripheral) => {
                             // Get basic info first (fast)
                             let device = get_device_info(&peripheral).await?;
+                            // Filter by RSSI
                             if let Some(rssi) = args.rssi {
                                 if device.rssi < rssi {
                                     continue;
                                 }
                             }
+                            // Filter by name
+                            if !args.name.is_empty() && !args.name.contains(&device.name) {
+                                continue;
+                            }
                             if args.enumerate {
                                 // Spawn enumeration in background so we don't block events
-                                let json = args.json;
                                 let filter = service_filter.clone();
                                 tokio::spawn(async move {
                                     match enumerate_services(&peripheral, args.read, &filter).await
                                     {
                                         Ok(Some(services)) => {
+                                            // Update DeviceInfo with discovered services
                                             let device = DeviceInfo { services, ..device };
-                                            if json {
+                                            if args.json {
                                                 println!(
                                                     "{}",
                                                     if args.compact {
