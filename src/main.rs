@@ -7,7 +7,7 @@ use btleplug::platform::{Manager, Peripheral};
 use futures::StreamExt;
 use hex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -122,38 +122,50 @@ where
 
 const ENUMERATE_TIMEOUT: u64 = 5;
 const CONNECT_TIMEOUT: u64 = 5;
-const DISCONNECT_TIMEOUT: u64 = 5;
+const DISCONNECT_TIMEOUT: u64 = 1;
 
 #[derive(FromArgs)]
 /// Simple BLE scanner
 struct Args {
     /// scan timeout
-    #[argh(option, short = 't')]
+    #[argh(option)]
     timeout: Option<u64>,
 
     /// enumerate services
-    #[argh(switch, short = 'e')]
+    #[argh(switch)]
     enumerate: bool,
 
-    /// read characteristic data
-    #[argh(switch, short = 'r')]
+    /// read service data
+    #[argh(switch)]
     read: bool,
 
+    /// read service data continuously (poll interval in s)
+    #[argh(option)]
+    poll: Option<f64>,
+
     /// NDJSON output
-    #[argh(switch, short = 'j')]
+    #[argh(switch)]
     json: bool,
 
     /// compact JSON output
-    #[argh(switch, short = 'c')]
+    #[argh(switch)]
     compact: bool,
 
     /// filter device name [multiple allowed]
-    #[argh(option, short = 'n')]
+    #[argh(option)]
     name: Vec<String>,
 
-    /// filter service uuid [multiple allowed]
-    #[argh(option, short = 'f')]
+    /// filter service uuid (needs --enumerate) [multiple allowed]
+    #[argh(option)]
     service: Vec<String>,
+
+    /// filter characteristic uuid (needs --service) [multiple allowed]
+    #[argh(option)]
+    characteristic: Vec<String>,
+
+    /// write characteristic <hex> [multiple allowed - must have the same number of values as characteristics]
+    #[argh(option)]
+    write: Vec<String>,
 
     /// minimum RSSI
     #[argh(option)]
@@ -169,17 +181,40 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("--service/--read require --enumerate");
     }
 
+    if !args.characteristic.is_empty() && args.service.is_empty() {
+        anyhow::bail!("--characteristic requires --service");
+    }
+
+    if !args.write.is_empty() && (args.characteristic.len() != args.write.len()) {
+        anyhow::bail!("number of --write values must equal number of --characteristic values");
+    }
+
     if args.compact && !args.json {
         anyhow::bail!("--compact requires --json");
     }
 
-    // Convert service to HashSet<Uuid>
+    // Convert service filter to HashSet<Uuid>
     let service_filter = args
         .service
         .iter()
         .map(|s| parse_uuid(s))
         .collect::<Result<HashSet<Uuid>, _>>()
-        .context("Error Parsing UUID")?;
+        .context("Error Parsing Service UUID")?;
+
+    // Convert characteristic filter to HashSet<Uuid>
+    let characteristic_filter = args
+        .characteristic
+        .iter()
+        .map(|s| parse_uuid(s))
+        .collect::<Result<HashSet<Uuid>, _>>()
+        .context("Error Parsing Characteristic UUID")?;
+
+    // Convert write values into HashMap<Uuid,Vec<u8>>
+    let write_map = characteristic_filter
+        .iter()
+        .zip(args.write.iter())
+        .map(|(uuid, value)| (uuid, hex_to_vec(&value).expect("Error decoding hex value")))
+        .collect::<HashMap<_, _>>();
 
     // Initialise Bluetooth
     let manager = Manager::new().await?;
@@ -219,27 +254,40 @@ async fn main() -> anyhow::Result<()> {
                             if !args.name.is_empty() && !args.name.contains(&device.name) {
                                 continue;
                             }
-                            if args.enumerate {
-                                // Spawn enumeration in background so we don't block events
-                                let filter = service_filter.clone();
+                            if let Some(poll_interval) = args.poll {
+                                // Poll device
+                                let service_filter = service_filter.clone();
+                                let characteristic_filter = characteristic_filter.clone();
                                 tokio::spawn(async move {
-                                    match enumerate_services(&peripheral, args.read, &filter).await
+                                    poll_service(
+                                        &peripheral,
+                                        &device,
+                                        &service_filter,
+                                        &characteristic_filter,
+                                        poll_interval,
+                                        args.json,
+                                        args.compact,
+                                    )
+                                    .await?;
+                                    Ok::<(), anyhow::Error>(())
+                                });
+                            } else if args.enumerate {
+                                // Spawn enumeration in background so we don't block events
+                                let service_filter = service_filter.clone();
+                                let characteristic_filter = characteristic_filter.clone();
+                                tokio::spawn(async move {
+                                    match enumerate_services(
+                                        &peripheral,
+                                        args.read,
+                                        &service_filter,
+                                        &characteristic_filter,
+                                    )
+                                    .await
                                     {
                                         Ok(Some(services)) => {
                                             // Update DeviceInfo with discovered services
                                             let device = DeviceInfo { services, ..device };
-                                            if args.json {
-                                                println!(
-                                                    "{}",
-                                                    if args.compact {
-                                                        serde_json::to_string(&device)?
-                                                    } else {
-                                                        serde_json::to_string_pretty(&device)?
-                                                    }
-                                                );
-                                            } else {
-                                                print!("[+] Discovered: {}", device);
-                                            }
+                                            print_response(&device, args.json, args.compact)?;
                                         }
                                         Ok(None) => {
                                             // No filter matches
@@ -249,18 +297,7 @@ async fn main() -> anyhow::Result<()> {
                                     Ok::<(), anyhow::Error>(())
                                 });
                             } else {
-                                if args.json {
-                                    println!(
-                                        "{}",
-                                        if args.compact {
-                                            serde_json::to_string(&device)?
-                                        } else {
-                                            serde_json::to_string_pretty(&device)?
-                                        }
-                                    );
-                                } else {
-                                    print!("[+] Discovered: {}", device);
-                                }
+                                print_response(&device, args.json, args.compact)?;
                             }
                         }
                         Err(e) => {
@@ -268,7 +305,9 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                 }
-                _ => {}
+                _ => {
+                    // eprintln!(">> EVENT: {:?}", event);
+                }
             }
         }
         Ok::<(), anyhow::Error>(())
@@ -289,6 +328,22 @@ async fn main() -> anyhow::Result<()> {
         scan.await.map_err(|e| anyhow!("Scan Error: {e}"))?
     }
 
+    Ok(())
+}
+
+fn print_response(device: &DeviceInfo, json: bool, compact: bool) -> anyhow::Result<()> {
+    if json {
+        println!(
+            "{}",
+            if compact {
+                serde_json::to_string(&device)?
+            } else {
+                serde_json::to_string_pretty(&device)?
+            }
+        );
+    } else {
+        print!("[+] Discovered: {}", device);
+    }
     Ok(())
 }
 
@@ -320,38 +375,131 @@ async fn get_device_info(p: &Peripheral) -> anyhow::Result<DeviceInfo> {
     })
 }
 
-// Distinguish between no services (empty Some<Vec>) and no filter matches (None)
-async fn enumerate_services(
+async fn poll_service(
     p: &Peripheral,
-    read: bool,
-    filter: &HashSet<Uuid>,
-) -> anyhow::Result<Option<Vec<ServiceInfo>>> {
-    let mut service_info = Vec::new();
-    match timeout(Duration::from_secs(ENUMERATE_TIMEOUT), p.connect()).await {
+    device: &DeviceInfo,
+    service_filter: &HashSet<Uuid>,
+    characteristic_filter: &HashSet<Uuid>,
+    interval: f64,
+    json: bool,
+    compact: bool,
+) -> anyhow::Result<()> {
+    match timeout(Duration::from_secs(CONNECT_TIMEOUT), p.connect()).await {
         Ok(Ok(_)) => {
-            match timeout(Duration::from_secs(CONNECT_TIMEOUT), p.discover_services()).await {
+            match timeout(
+                Duration::from_secs(ENUMERATE_TIMEOUT),
+                p.discover_services(),
+            )
+            .await
+            {
                 Ok(Ok(_)) => {
-                    let services = if filter.is_empty() {
+                    let services = if service_filter.is_empty() {
                         p.services()
                     } else {
                         p.services()
                             .into_iter()
-                            .filter(|s| filter.contains(&s.uuid))
+                            .filter(|s| service_filter.contains(&s.uuid))
+                            .collect::<BTreeSet<_>>()
+                    };
+                    if !services.is_empty() {
+                        let mut ticker = tokio::time::interval(Duration::from_millis(
+                            (interval * 1000.0) as u64,
+                        ));
+                        loop {
+                            ticker.tick().await; // First tick returns immediately
+                            let mut service_info = Vec::new();
+                            for service in &services {
+                                let mut chars = Vec::new();
+                                for char in &service.characteristics {
+                                    if characteristic_filter.is_empty()
+                                        || characteristic_filter.contains(&char.uuid)
+                                    {
+                                        chars.push(CharacteristicInfo {
+                                            uuid: char.uuid.to_short_string(),
+                                            properties: format_properties(char.properties),
+                                            char_type: CHARACTERISTIC_MAP
+                                                .get(&char.uuid)
+                                                .map(|v| &**v),
+                                            value: if char.properties.contains(CharPropFlags::READ)
+                                            {
+                                                p.read(char).await.ok()
+                                            } else {
+                                                None
+                                            },
+                                        });
+                                    }
+                                }
+                                service_info.push(ServiceInfo {
+                                    uuid: service.uuid.to_short_string(),
+                                    service_type: SERVICE_MAP.get(&service.uuid).map(|v| &**v),
+                                    characteristics: chars,
+                                });
+                            }
+                            let device = DeviceInfo {
+                                id: device.id.clone(),
+                                name: device.name.clone(),
+                                rssi: device.rssi, // RSSI doesnt seem to be updated
+                                services: service_info.clone(),
+                            };
+                            print_response(&device, json, compact)?;
+                        }
+                    }
+                }
+                _ => {
+                    // eprintln!("Service discovery failed/timeout for {}", p.id()),
+                }
+            }
+        }
+        _ => {
+            // eprintln!("Connect timeout/error for {}", p.id()),
+        }
+    }
+    Ok(())
+}
+
+// Distinguish between no services (empty Some<Vec>) and no filter matches (None)
+async fn enumerate_services(
+    p: &Peripheral,
+    read: bool,
+    service_filter: &HashSet<Uuid>,
+    characteristic_filter: &HashSet<Uuid>,
+) -> anyhow::Result<Option<Vec<ServiceInfo>>> {
+    let mut service_info = Vec::new();
+    match timeout(Duration::from_secs(CONNECT_TIMEOUT), p.connect()).await {
+        Ok(Ok(_)) => {
+            match timeout(
+                Duration::from_secs(ENUMERATE_TIMEOUT),
+                p.discover_services(),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {
+                    let services = if service_filter.is_empty() {
+                        p.services()
+                    } else {
+                        p.services()
+                            .into_iter()
+                            .filter(|s| service_filter.contains(&s.uuid))
                             .collect::<BTreeSet<_>>()
                     };
                     for service in services {
                         let mut chars = Vec::new();
                         for char in &service.characteristics {
-                            chars.push(CharacteristicInfo {
-                                uuid: char.uuid.to_short_string(),
-                                properties: format_properties(char.properties),
-                                char_type: CHARACTERISTIC_MAP.get(&char.uuid).map(|v| &**v),
-                                value: if read && char.properties.contains(CharPropFlags::READ) {
-                                    p.read(char).await.ok()
-                                } else {
-                                    None
-                                },
-                            });
+                            if characteristic_filter.is_empty()
+                                || characteristic_filter.contains(&char.uuid)
+                            {
+                                chars.push(CharacteristicInfo {
+                                    uuid: char.uuid.to_short_string(),
+                                    properties: format_properties(char.properties),
+                                    char_type: CHARACTERISTIC_MAP.get(&char.uuid).map(|v| &**v),
+                                    value: if read && char.properties.contains(CharPropFlags::READ)
+                                    {
+                                        p.read(char).await.ok()
+                                    } else {
+                                        None
+                                    },
+                                });
+                            }
                         }
                         service_info.push(ServiceInfo {
                             uuid: service.uuid.to_short_string(),
@@ -362,14 +510,24 @@ async fn enumerate_services(
                 }
                 _ => eprintln!("Service discovery failed/timeout for {}", p.id()),
             }
-            if let Err(e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), p.disconnect()).await {
-                eprintln!("Disconnect timeout/error for {}: {:?}", p.id(), e);
+            if let Err(_e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), p.disconnect()).await
+            {
+                // eprintln!("Disconnect timeout/error for {}: {:?}", p.id(), e);
             }
         }
-        _ => eprintln!("Connect timeout/error for {}", p.id()),
+        _ => {
+            // eprintln!("Connect timeout/error for {}", p.id())
+        }
     }
-    if service_info.is_empty() && !filter.is_empty() {
+    if service_info.is_empty() && !service_filter.is_empty() {
         Ok(None)
+        /*
+            // XXX Dont return service if none of the characteristic filters match
+            } else if service_info.iter().all(|s| s.characteristics.is_empty())
+                && !characteristic_filter.is_empty()
+            {
+                Ok(None)
+        */
     } else {
         Ok(Some(service_info))
     }
@@ -423,4 +581,12 @@ fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
     } else {
         uuid::Uuid::parse_str(s)
     }
+}
+
+fn hex_to_vec(s: &str) -> Result<Vec<u8>, hex::FromHexError> {
+    // Strip "0x" if necessary
+    let cleaned = s.strip_prefix("0x").unwrap_or(s);
+
+    // The hex crate automatically ignores whitespace
+    hex::decode(cleaned)
 }
