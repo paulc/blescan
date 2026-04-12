@@ -1,4 +1,5 @@
 use btleplug::api::CharPropFlags;
+
 use hex;
 
 pub fn format_properties(props: CharPropFlags) -> String {

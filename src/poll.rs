@@ -10,7 +10,6 @@ use uuid::Uuid;
 
 use std::collections::{BTreeSet, HashSet};
 
-use crate::device::device_info;
 use crate::util::parse_uuid;
 use crate::PollArgs;
 
@@ -66,7 +65,7 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
                     match central.peripheral(&id).await {
                         Ok(peripheral) => {
                             // Get basic info first (fast)
-                            let device = device_info(&peripheral).await?;
+                            let device = DeviceInfo::new(&peripheral).await?;
                             // Filter by RSSI
                             if let Some(rssi) = args.rssi {
                                 if device.rssi < rssi {

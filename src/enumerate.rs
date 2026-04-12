@@ -1,17 +1,20 @@
 use anyhow::{anyhow, Context};
+use btleplug::api::{bleuuid::BleUuid, CharPropFlags, Peripheral as _};
 use btleplug::api::{Central, CentralEvent, ScanFilter};
 use btleplug::platform::Adapter;
+use btleplug::platform::Peripheral;
 use futures::StreamExt;
 use std::time::Duration;
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
-use crate::device::{device_info, enumerate_services};
-use crate::device_info::DeviceInfo;
-use crate::util::parse_uuid;
+use crate::device_info::{CharacteristicInfo, DeviceInfo, ServiceInfo};
+use crate::util::{format_properties, parse_uuid};
 use crate::EnumerateArgs;
+use crate::{CHARACTERISTIC_MAP, SERVICE_MAP};
+use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
 
 pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
     if !args.characteristic.is_empty() && args.service.is_empty() {
@@ -60,7 +63,7 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                     match central.peripheral(&id).await {
                         Ok(peripheral) => {
                             // Get basic info first (fast)
-                            let device = device_info(&peripheral).await?;
+                            let device = DeviceInfo::new(&peripheral).await?;
                             // Filter by RSSI
                             if let Some(rssi) = args.rssi {
                                 if device.rssi < rssi {
@@ -134,4 +137,75 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+// Distinguish between no services (empty Some<Vec>) and no filter matches (None)
+async fn enumerate_services(
+    p: &Peripheral,
+    read: bool,
+    service_filter: &HashSet<Uuid>,
+    characteristic_filter: &HashSet<Uuid>,
+) -> anyhow::Result<Option<Vec<ServiceInfo>>> {
+    let mut service_info = Vec::new();
+    match timeout(Duration::from_secs(CONNECT_TIMEOUT), p.connect()).await {
+        Ok(Ok(_)) => {
+            match timeout(
+                Duration::from_secs(ENUMERATE_TIMEOUT),
+                p.discover_services(),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {
+                    let services = if service_filter.is_empty() {
+                        p.services()
+                    } else {
+                        p.services()
+                            .into_iter()
+                            .filter(|s| service_filter.contains(&s.uuid))
+                            .collect::<BTreeSet<_>>()
+                    };
+                    for service in services {
+                        let mut chars = Vec::new();
+                        for char in &service.characteristics {
+                            if characteristic_filter.is_empty()
+                                || characteristic_filter.contains(&char.uuid)
+                            {
+                                chars.push(CharacteristicInfo {
+                                    uuid: char.uuid.to_short_string(),
+                                    properties: format_properties(char.properties),
+                                    char_type: CHARACTERISTIC_MAP.get(&char.uuid).map(|v| &**v),
+                                    value: if read && char.properties.contains(CharPropFlags::READ)
+                                    {
+                                        p.read(char).await.ok()
+                                    } else {
+                                        None
+                                    },
+                                });
+                            }
+                        }
+                        service_info.push(ServiceInfo {
+                            uuid: service.uuid.to_short_string(),
+                            service_type: SERVICE_MAP.get(&service.uuid).map(|v| &**v),
+                            characteristics: chars,
+                        });
+                    }
+                }
+                _ => {
+                    // eprintln!("Service discovery failed/timeout for {}", p.id())
+                }
+            }
+            if let Err(_e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), p.disconnect()).await
+            {
+                // eprintln!("Disconnect timeout/error for {}: {:?}", p.id(), e);
+            }
+        }
+        _ => {
+            // eprintln!("Connect timeout/error for {}", p.id())
+        }
+    }
+    if service_info.is_empty() && !service_filter.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(service_info))
+    }
 }

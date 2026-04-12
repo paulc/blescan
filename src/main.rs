@@ -4,7 +4,6 @@ use btleplug::platform::Manager;
 
 use argh::FromArgs;
 
-mod device;
 mod device_info;
 mod enumerate;
 mod poll;

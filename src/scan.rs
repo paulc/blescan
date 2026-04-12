@@ -7,7 +7,7 @@ use tokio::time::timeout;
 
 use std::collections::HashSet;
 
-use crate::device::device_info;
+use crate::device_info::DeviceInfo;
 use crate::ScanArgs;
 
 pub async fn run(central: Adapter, args: ScanArgs) -> anyhow::Result<()> {
@@ -30,7 +30,7 @@ pub async fn run(central: Adapter, args: ScanArgs) -> anyhow::Result<()> {
                     match central.peripheral(&id).await {
                         Ok(peripheral) => {
                             // Get basic info first (fast)
-                            let device = device_info(&peripheral).await?;
+                            let device = DeviceInfo::new(&peripheral).await?;
                             // Filter by RSSI
                             if let Some(rssi) = args.rssi {
                                 if device.rssi < rssi {

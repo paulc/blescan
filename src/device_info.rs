@@ -1,5 +1,10 @@
+use btleplug::api::{bleuuid::BleUuid, Peripheral as _};
+use btleplug::platform::Peripheral;
+
 use hex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::SERVICE_MAP;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
@@ -7,6 +12,36 @@ pub struct DeviceInfo {
     pub name: String,
     pub rssi: i16,
     pub services: Vec<ServiceInfo>,
+}
+
+impl DeviceInfo {
+    pub async fn new(p: &Peripheral) -> anyhow::Result<Self> {
+        let properties = p.properties().await?.unwrap_or_default();
+        let id = p.id();
+        let name = properties
+            .local_name
+            .clone()
+            .unwrap_or_else(|| "Unknown".to_string());
+        let rssi = properties.rssi.unwrap_or(0);
+        // Read basic service data from the advertisment
+        // but this may miss some services (only advertised
+        // intermittently)
+        let services = properties
+            .services
+            .iter()
+            .map(|uuid| ServiceInfo {
+                uuid: uuid.to_short_string(),
+                service_type: SERVICE_MAP.get(uuid).map(|v| &**v),
+                characteristics: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        Ok(DeviceInfo {
+            id: id.to_string(),
+            name: name,
+            rssi,
+            services,
+        })
+    }
 }
 
 impl std::fmt::Display for DeviceInfo {
