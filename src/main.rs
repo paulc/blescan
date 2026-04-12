@@ -136,21 +136,25 @@ struct PollArgs {
 /// Enumerate BLE Devices
 #[argh(subcommand, name = "write")]
 struct WriteArgs {
-    /// device name [multiple allowed]
+    /// device name
     #[argh(option)]
-    name: Vec<String>,
+    name: Option<String>,
 
-    /// device uuid [multiple allowed]
+    /// device uuid
     #[argh(option)]
-    device: Vec<String>,
+    device: Option<String>,
 
-    /// service uuid [multiple allowed]
+    /// service uuid
     #[argh(option)]
-    service: Vec<String>,
+    service: String,
 
-    /// characteristic data <uuid::data> [multiple allowed] (data in hex)
+    /// characteristic uuid
     #[argh(option)]
-    characteristic: Vec<String>,
+    characteristic: String,
+
+    /// data (hex)
+    #[argh(option)]
+    data: String,
 
     /// minimum RSSI
     #[argh(option)]

@@ -1,45 +1,28 @@
 use anyhow::{anyhow, Context};
-use btleplug::api::{Central, CentralEvent, ScanFilter};
+use btleplug::api::{Central, CentralEvent, CharPropFlags, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::Adapter;
 use futures::StreamExt;
 use std::time::Duration;
 use tokio::time::timeout;
-use uuid::Uuid;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use crate::device::{device_info, enumerate_services};
-use crate::device_info::DeviceInfo;
+use crate::device::device_info;
 use crate::util::{hex_to_vec, parse_uuid};
 use crate::WriteArgs;
+use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
 
 pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
-    if args.service.is_empty() || args.characteristic.is_empty() {
-        anyhow::bail!("write requires --service and --characteristic");
+    // Convert args
+    let service_match = parse_uuid(&args.service).context("Error Parsing Service UUID")?;
+    let characteristic_match =
+        parse_uuid(&args.characteristic).context("Error Parsing Characteristic UUID")?;
+    let data = hex_to_vec(&args.data).context("Error parsting hex data")?;
+
+    // Check args.device is a valid UUID
+    if let Some(ref device) = args.device {
+        parse_uuid(&device).context("Error Parsing Device UUID")?;
     }
-
-    // Convert service filter to HashSet<Uuid>
-    let service_filter = args
-        .service
-        .iter()
-        .map(|s| parse_uuid(s))
-        .collect::<Result<HashSet<Uuid>, _>>()
-        .context("Error Parsing Service UUID")?;
-
-    // Convert characteristic filter to HashMap<Uuid,Vec<u8>>
-    let characteristic_filter = args
-        .characteristic
-        .iter()
-        .map(|s| {
-            s.split_once("::")
-                .with_context(|| "Invalid data format: <uuid::data (hex)>")
-                .and_then(|(uuid_str, data_str)| {
-                    let uuid = parse_uuid(uuid_str)?;
-                    let data = hex_to_vec(data_str)?;
-                    Ok((uuid, data))
-                })
-        })
-        .collect::<Result<HashMap<_, _>, _>>()?;
 
     // ScanFilter only checks for services in the Advertisement
     // payload which tend to be very limited (31 bytes max) rather
@@ -69,18 +52,105 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                 }
                             }
                             // Filter by name
-                            if !args.name.is_empty() && !args.name.contains(&device.name) {
+                            if args.name.as_ref().is_some_and(|name| *name != device.name) {
                                 continue;
                             }
-                            // Filter by device UUID
-                            if !args.device.is_empty() && !args.device.contains(&device.id) {
-                                continue;
-                            }
-                            // Spawn enumeration in background so we don't block events
-                            let service_filter = service_filter.clone();
-                            let characteristic_filter = characteristic_filter.clone();
 
-                            tokio::spawn(async move {});
+                            // Filter by device UUID
+                            if args.device.as_ref().is_some_and(|id| *id != device.id) {
+                                continue;
+                            }
+
+                            // Spawn enumeration in background so we don't block events
+                            let data = data.clone();
+                            tokio::spawn(async move {
+                                match timeout(
+                                    Duration::from_secs(CONNECT_TIMEOUT),
+                                    peripheral.connect(),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(_)) => {
+                                        match timeout(
+                                            Duration::from_secs(ENUMERATE_TIMEOUT),
+                                            peripheral.discover_services(),
+                                        )
+                                        .await
+                                        {
+                                            Ok(Ok(_)) => {
+                                                'services: for service in peripheral.services() {
+                                                    if service.uuid == service_match {
+                                                        for char in &service.characteristics {
+                                                            if char.uuid == characteristic_match {
+                                                                if char
+                                                                    .properties
+                                                                    .contains(CharPropFlags::WRITE)
+                                                                {
+                                                                    match peripheral
+                                                                        .write(
+                                                                            char,
+                                                                            &data,
+                                                                            WriteType::WithResponse,
+                                                                        )
+                                                                        .await
+                                                                    {
+                                                                        Ok(_) => eprintln!(
+                                                                            "Write Successful: {}",
+                                                                            char.uuid
+                                                                        ),
+                                                                        Err(e) => eprintln!(
+                                                                            "Write Error: {} -> {}",
+                                                                            char.uuid, e
+                                                                        ),
+                                                                    }
+                                                                } else if char
+                                                                    .properties
+                                                                    .contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
+                                                                {
+                                                                    match peripheral
+                                                                        .write(
+                                                                            char,
+                                                                            &data,
+                                                                            WriteType::WithoutResponse,
+                                                                        )
+                                                                        .await
+                                                                    {
+                                                                        Ok(_) => eprintln!(
+                                                                            "Write Successful: {}",
+                                                                            char.uuid
+                                                                        ),
+                                                                        Err(e) => eprintln!(
+                                                                            "Write Error: {} -> {}",
+                                                                            char.uuid, e
+                                                                        ),
+                                                                    }
+                                                                } else {
+                                                                    eprintln!("ERROR: Characteristic {} not writeable", char.uuid);
+                                                                }
+                                                                break 'services;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            _ => {
+                                                // eprintln!("Service discovery failed/timeout for {}", p.id())
+                                            }
+                                        }
+                                        if let Err(_e) = timeout(
+                                            Duration::from_secs(DISCONNECT_TIMEOUT),
+                                            peripheral.disconnect(),
+                                        )
+                                        .await
+                                        {
+                                            // eprintln!("Disconnect timeout/error for {}: {:?}", p.id(), e);
+                                        }
+                                    }
+                                    _ => {
+                                        // eprintln!("Connect timeout/error for {}", p.id())
+                                    }
+                                }
+                            });
                         }
                         Err(e) => {
                             eprintln!("Error retrieving peripheral: {:?}", e);

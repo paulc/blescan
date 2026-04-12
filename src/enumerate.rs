@@ -34,6 +34,13 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
         .collect::<Result<HashSet<Uuid>, _>>()
         .context("Error Parsing Characteristic UUID")?;
 
+    // Validate device uuids
+    args.device
+        .iter()
+        .map(|s| parse_uuid(s))
+        .collect::<Result<Vec<_>, _>>()
+        .context("Error Parsing Device UUID")?;
+
     // ScanFilter only checks for services in the Advertisement
     // payload which tend to be very limited (31 bytes max) rather
     // then the full list of GATT services (which need connection)
