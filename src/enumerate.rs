@@ -9,12 +9,15 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use std::collections::{BTreeSet, HashSet};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::device_info::{CharacteristicInfo, DeviceInfo, ServiceInfo};
 use crate::util::{format_properties, parse_uuid};
 use crate::EnumerateArgs;
 use crate::{CHARACTERISTIC_MAP, SERVICE_MAP};
 use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
+
+static MATCHES: AtomicU32 = AtomicU32::new(0);
 
 pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
     if !args.characteristic.is_empty() && args.service.is_empty() {
@@ -99,6 +102,7 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                                         } else {
                                             print!("[+] Discovered: {}", device);
                                         }
+                                        MATCHES.fetch_add(1, Ordering::Relaxed);
                                     }
                                     Ok(None) => {
                                         // No filter matches
@@ -116,6 +120,12 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                 _ => {
                     // eprintln!(">> EVENT: {:?}", event);
                 }
+            }
+            if args
+                .max
+                .is_some_and(|max| MATCHES.load(Ordering::Relaxed) >= max)
+            {
+                break;
             }
         }
         Ok::<(), anyhow::Error>(())

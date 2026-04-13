@@ -1,7 +1,5 @@
 use btleplug::api::CharPropFlags;
 
-use hex;
-
 pub fn format_properties(props: CharPropFlags) -> String {
     let mut p = Vec::new();
     if props.contains(CharPropFlags::BROADCAST) {
@@ -50,12 +48,4 @@ pub fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
     } else {
         uuid::Uuid::parse_str(s)
     }
-}
-
-pub fn hex_to_vec(s: &str) -> Result<Vec<u8>, hex::FromHexError> {
-    // Strip "0x" if necessary
-    let cleaned = s.strip_prefix("0x").unwrap_or(s);
-
-    // The hex crate automatically ignores whitespace
-    hex::decode(cleaned)
 }

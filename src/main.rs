@@ -4,6 +4,7 @@ use btleplug::platform::Manager;
 
 use argh::FromArgs;
 
+mod char_data;
 mod device_info;
 mod enumerate;
 mod poll;
@@ -18,6 +19,7 @@ include!(concat!(env!("OUT_DIR"), "/uuid_map.rs"));
 
 pub const ENUMERATE_TIMEOUT: u64 = 5;
 pub const CONNECT_TIMEOUT: u64 = 5;
+pub const WRITE_TIMEOUT: u64 = 5;
 pub const DISCONNECT_TIMEOUT: u64 = 1;
 
 #[derive(FromArgs, Debug)]
@@ -92,10 +94,15 @@ struct EnumerateArgs {
     /// NDJSON output
     #[argh(switch)]
     json: bool,
+
+    /// max number of device matches (note: may be exceeded if multiple
+    /// matching tasks running in parallel)
+    #[argh(option)]
+    max: Option<u32>,
 }
 
 #[derive(FromArgs, Debug)]
-/// Read service data continuously (poll interval in s)
+/// Read service data continuously
 #[argh(subcommand, name = "poll")]
 struct PollArgs {
     /// read service data continuously (poll interval in s)
