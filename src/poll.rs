@@ -13,7 +13,7 @@ use std::collections::{BTreeSet, HashSet};
 use crate::util::parse_uuid;
 use crate::PollArgs;
 
-use crate::device_info::{CharacteristicInfo, DeviceInfo, ServiceInfo};
+use crate::types::{CharacteristicInfo, DeviceInfo, ServiceInfo};
 use crate::util::format_properties;
 use crate::{CHARACTERISTIC_MAP, SERVICE_MAP};
 use crate::{CONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
@@ -163,19 +163,23 @@ async fn poll(
                             let mut service_info = Vec::new();
                             for service in &services {
                                 let mut chars = Vec::new();
-                                for char in &service.characteristics {
+                                for characteristic in &service.characteristics {
                                     if characteristic_filter.is_empty()
-                                        || characteristic_filter.contains(&char.uuid)
+                                        || characteristic_filter.contains(&characteristic.uuid)
                                     {
                                         chars.push(CharacteristicInfo {
-                                            uuid: char.uuid.to_short_string(),
-                                            properties: format_properties(char.properties),
+                                            uuid: characteristic.uuid.to_short_string(),
+                                            properties: format_properties(
+                                                characteristic.properties,
+                                            ),
                                             char_type: CHARACTERISTIC_MAP
-                                                .get(&char.uuid)
+                                                .get(&characteristic.uuid)
                                                 .map(|v| &**v),
-                                            value: if char.properties.contains(CharPropFlags::READ)
+                                            value: if characteristic
+                                                .properties
+                                                .contains(CharPropFlags::READ)
                                             {
-                                                p.read(char).await.ok()
+                                                p.read(characteristic).await.ok()
                                             } else {
                                                 None
                                             },

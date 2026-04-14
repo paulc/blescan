@@ -94,14 +94,21 @@ pub struct CharacteristicInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(skip_deserializing)]
     pub char_type: Option<&'static str>,
-    #[serde(serialize_with = "serialize_hex", deserialize_with = "deserialize_hex")]
+    #[serde(
+        serialize_with = "serialize_hex_option",
+        deserialize_with = "deserialize_hex_option"
+    )]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Vec<u8>>,
 }
 
 impl std::fmt::Display for CharacteristicInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "    └─ Char: {} {}", self.uuid, self.properties)?;
+        writeln!(
+            f,
+            "    └─ Characteristic: {} {}",
+            self.uuid, self.properties
+        )?;
         if let Some(t) = self.char_type {
             writeln!(f, "       Type: {}", t)?;
         }
@@ -112,7 +119,44 @@ impl std::fmt::Display for CharacteristicInfo {
     }
 }
 
-fn serialize_hex<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationInfo {
+    pub service: String,
+    pub characteristic: String,
+    #[serde(serialize_with = "serialize_hex", deserialize_with = "deserialize_hex")]
+    pub value: Vec<u8>,
+}
+
+impl std::fmt::Display for NotificationInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Notification :: Service: {} / Characteristic: {} / Value: 0x{}",
+            self.service,
+            self.characteristic,
+            hex::encode(&self.value)
+        )?;
+        Ok(())
+    }
+}
+
+fn serialize_hex<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&format!("0x{}", hex::encode(bytes)))
+}
+
+fn deserialize_hex<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    let s = s.strip_prefix("0x").unwrap_or(&s); // Strip 0x
+    hex::decode(s).map_err(serde::de::Error::custom)
+}
+
+fn serialize_hex_option<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -125,7 +169,7 @@ where
     }
 }
 
-fn deserialize_hex<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+fn deserialize_hex_option<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
 where
     D: Deserializer<'de>,
 {

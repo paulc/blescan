@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::char_data::CharData;
-use crate::device_info::DeviceInfo;
+use crate::types::DeviceInfo;
 use crate::util::parse_uuid;
 use crate::WriteArgs;
 use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, WRITE_TIMEOUT};
@@ -85,9 +85,13 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                             Ok(Ok(_)) => {
                                                 'services: for service in peripheral.services() {
                                                     if service.uuid == service_match {
-                                                        for char in &service.characteristics {
-                                                            if char.uuid == characteristic_match {
-                                                                if char
+                                                        for characteristic in
+                                                            &service.characteristics
+                                                        {
+                                                            if characteristic.uuid
+                                                                == characteristic_match
+                                                            {
+                                                                if characteristic
                                                                     .properties
                                                                     .contains(CharPropFlags::WRITE)
                                                                 {
@@ -95,7 +99,7 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                                                         Duration::from_secs(WRITE_TIMEOUT),
                                                                         peripheral
                                                                         .write(
-                                                                            char,
+                                                                            characteristic,
                                                                             data.to_vec(),
                                                                             WriteType::WithResponse,
                                                                         ))
@@ -103,24 +107,24 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                                                     {
                                                                         Ok(Ok(_)) => eprintln!(
                                                                             "Write Successful: {}",
-                                                                            char.uuid
+                                                                            characteristic.uuid
                                                                         ),
                                                                         Ok(Err(e)) => eprintln!(
                                                                             "Write Error: {} -> {}",
-                                                                            char.uuid, e
+                                                                            characteristic.uuid, e
                                                                         ),
                                                                         Err(_) => eprintln!(
                                                                             "Write Timeout: {}",
-                                                                            char.uuid
+                                                                            characteristic.uuid
                                                                         ),
                                                                     }
-                                                                } else if char
+                                                                } else if characteristic
                                                                     .properties
                                                                     .contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
                                                                 {
                                                                     match peripheral
                                                                         .write(
-                                                                            char,
+                                                                            characteristic,
                                                                             data.to_vec(),
                                                                             WriteType::WithoutResponse,
                                                                         )
@@ -128,15 +132,15 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                                                     {
                                                                         Ok(_) => eprintln!(
                                                                             "Write Successful: {}",
-                                                                            char.uuid
+                                                                            characteristic.uuid
                                                                         ),
                                                                         Err(e) => eprintln!(
                                                                             "Write Error: {} -> {}",
-                                                                            char.uuid, e
+                                                                            characteristic.uuid, e
                                                                         ),
                                                                     }
                                                                 } else {
-                                                                    eprintln!("ERROR: Characteristic {} not writeable", char.uuid);
+                                                                    eprintln!("ERROR: Characteristic {} not writeable", characteristic.uuid);
                                                                 }
                                                                 WRITE_COMPLETE
                                                                     .store(true, Ordering::Relaxed);

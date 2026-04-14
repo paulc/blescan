@@ -11,7 +11,7 @@ use uuid::Uuid;
 use std::collections::{BTreeSet, HashSet};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::device_info::{CharacteristicInfo, DeviceInfo, ServiceInfo};
+use crate::types::{CharacteristicInfo, DeviceInfo, ServiceInfo};
 use crate::util::{format_properties, parse_uuid};
 use crate::EnumerateArgs;
 use crate::{CHARACTERISTIC_MAP, SERVICE_MAP};
@@ -176,17 +176,20 @@ async fn enumerate_services(
                     };
                     for service in services {
                         let mut chars = Vec::new();
-                        for char in &service.characteristics {
+                        for characteristic in &service.characteristics {
                             if characteristic_filter.is_empty()
-                                || characteristic_filter.contains(&char.uuid)
+                                || characteristic_filter.contains(&characteristic.uuid)
                             {
                                 chars.push(CharacteristicInfo {
-                                    uuid: char.uuid.to_short_string(),
-                                    properties: format_properties(char.properties),
-                                    char_type: CHARACTERISTIC_MAP.get(&char.uuid).map(|v| &**v),
-                                    value: if read && char.properties.contains(CharPropFlags::READ)
+                                    uuid: characteristic.uuid.to_short_string(),
+                                    properties: format_properties(characteristic.properties),
+                                    char_type: CHARACTERISTIC_MAP
+                                        .get(&characteristic.uuid)
+                                        .map(|v| &**v),
+                                    value: if read
+                                        && characteristic.properties.contains(CharPropFlags::READ)
                                     {
-                                        p.read(char).await.ok()
+                                        p.read(characteristic).await.ok()
                                     } else {
                                         None
                                     },

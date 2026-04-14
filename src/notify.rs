@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Context};
-use btleplug::api::{Central, CentralEvent, CharPropFlags, Peripheral as _, ScanFilter};
+use btleplug::api::{
+    bleuuid::BleUuid, Central, CentralEvent, CharPropFlags, Peripheral as _, ScanFilter,
+};
 use btleplug::platform::Adapter;
 use futures::StreamExt;
 use std::time::Duration;
@@ -7,7 +9,7 @@ use tokio::time::timeout;
 
 use std::collections::HashSet;
 
-use crate::device_info::DeviceInfo;
+use crate::types::{DeviceInfo, NotificationInfo};
 use crate::util::parse_uuid;
 use crate::NotifyArgs;
 use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
@@ -77,14 +79,18 @@ pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
                                             Ok(Ok(_)) => {
                                                 for service in peripheral.services() {
                                                     if service.uuid == service_match {
-                                                        for char in &service.characteristics {
-                                                            if char.uuid == characteristic_match {
-                                                                if char
+                                                        for characteristic in
+                                                            &service.characteristics
+                                                        {
+                                                            if characteristic.uuid
+                                                                == characteristic_match
+                                                            {
+                                                                if characteristic
                                                                     .properties
                                                                     .contains(CharPropFlags::NOTIFY)
                                                                 {
                                                                     peripheral
-                                                                        .subscribe(&char)
+                                                                        .subscribe(&characteristic)
                                                                         .await?;
                                                                     // Listen for notifications
                                                                     let mut notification_stream =
@@ -96,7 +102,16 @@ pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
                                                                             .next()
                                                                             .await
                                                                     {
-                                                                        println!("Received notification: {:?}", notification.value);
+                                                                        let n = NotificationInfo {
+                                                                            service: notification.service_uuid.to_short_string(),
+                                                                            characteristic: notification.uuid.to_short_string(),
+                                                                            value: notification.value
+                                                                        };
+                                                                        if args.json {
+                                                                            println!("{}", serde_json::to_string(&n)?);
+                                                                        } else {
+                                                                            println!("{}", n);
+                                                                        }
                                                                     }
                                                                 } else {
                                                                     eprintln!("ERROR: Notify not supported [{}]", service.uuid);

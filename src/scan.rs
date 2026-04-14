@@ -7,7 +7,7 @@ use tokio::time::timeout;
 
 use std::collections::HashSet;
 
-use crate::device_info::DeviceInfo;
+use crate::types::DeviceInfo;
 use crate::ScanArgs;
 
 pub async fn run(central: Adapter, args: ScanArgs) -> anyhow::Result<()> {

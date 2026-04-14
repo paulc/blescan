@@ -5,11 +5,11 @@ use btleplug::platform::Manager;
 use argh::FromArgs;
 
 mod char_data;
-mod device_info;
 mod enumerate;
 mod notify;
 mod poll;
 mod scan;
+mod types;
 mod util;
 mod write;
 
