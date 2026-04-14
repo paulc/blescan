@@ -7,6 +7,7 @@ use argh::FromArgs;
 mod char_data;
 mod device_info;
 mod enumerate;
+mod notify;
 mod poll;
 mod scan;
 mod util;
@@ -36,6 +37,7 @@ enum Commands {
     Enumerate(EnumerateArgs),
     Poll(PollArgs),
     Write(WriteArgs),
+    Notify(NotifyArgs),
 }
 
 #[derive(FromArgs, Debug)]
@@ -129,7 +131,40 @@ struct PollArgs {
     #[argh(option)]
     rssi: Option<i16>,
 
-    /// scan timeout
+    /// timeout
+    #[argh(option)]
+    timeout: Option<u64>,
+
+    /// NDJSON output
+    #[argh(switch)]
+    json: bool,
+}
+
+#[derive(FromArgs, Debug)]
+/// Subscribe/listen for notify events
+#[argh(subcommand, name = "notify")]
+struct NotifyArgs {
+    /// device name
+    #[argh(option)]
+    name: Option<String>,
+
+    /// device uuid
+    #[argh(option)]
+    device: Option<String>,
+
+    /// service uuid
+    #[argh(option)]
+    service: String,
+
+    /// characteristic uuid
+    #[argh(option)]
+    characteristic: String,
+
+    /// minimum RSSI
+    #[argh(option)]
+    rssi: Option<i16>,
+
+    /// timeout
     #[argh(option)]
     timeout: Option<u64>,
 
@@ -193,6 +228,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Scan(args) => scan::run(central, args).await?,
         Commands::Enumerate(args) => enumerate::run(central, args).await?,
         Commands::Poll(args) => poll::run(central, args).await?,
+        Commands::Notify(args) => notify::run(central, args).await?,
         Commands::Write(args) => write::run(central, args).await?,
     }
 
