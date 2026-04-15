@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use btleplug::api::{Central, CentralEvent, CharPropFlags, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::Adapter;
 use futures::StreamExt;
@@ -8,10 +8,10 @@ use tokio::time::timeout;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::WriteArgs;
 use crate::char_data::CharData;
 use crate::types::DeviceInfo;
 use crate::util::parse_uuid;
-use crate::WriteArgs;
 use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, WRITE_TIMEOUT};
 
 static WRITE_COMPLETE: AtomicBool = AtomicBool::new(false);
@@ -19,10 +19,8 @@ static WRITE_COMPLETE: AtomicBool = AtomicBool::new(false);
 pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
     // Convert args
     let service_match = parse_uuid(&args.service).context("Error Parsing Service UUID")?;
-    let characteristic_match =
-        parse_uuid(&args.characteristic).context("Error Parsing Characteristic UUID")?;
-    let data =
-        CharData::try_from(args.data.as_str()).context("Error Parsing Characteristic Data")?;
+    let characteristic_match = parse_uuid(&args.characteristic).context("Error Parsing Characteristic UUID")?;
+    let data = CharData::try_from(args.data.as_str()).context("Error Parsing Characteristic Data")?;
 
     // Check args.device is a valid UUID
     if let Some(ref device) = args.device {
@@ -69,12 +67,7 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                             // Spawn enumeration in background so we don't block events
                             let data = data.clone();
                             tokio::spawn(async move {
-                                match timeout(
-                                    Duration::from_secs(CONNECT_TIMEOUT),
-                                    peripheral.connect(),
-                                )
-                                .await
-                                {
+                                match timeout(Duration::from_secs(CONNECT_TIMEOUT), peripheral.connect()).await {
                                     Ok(Ok(_)) => {
                                         match timeout(
                                             Duration::from_secs(ENUMERATE_TIMEOUT),
@@ -85,25 +78,25 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                             Ok(Ok(_)) => {
                                                 'services: for service in peripheral.services() {
                                                     if service.uuid == service_match {
-                                                        for characteristic in
-                                                            &service.characteristics
-                                                        {
-                                                            if characteristic.uuid
-                                                                == characteristic_match
-                                                            {
+                                                        for characteristic in &service.characteristics {
+                                                            if characteristic.uuid == characteristic_match {
                                                                 if characteristic
                                                                     .properties
                                                                     .contains(CharPropFlags::WRITE)
                                                                 {
                                                                     match timeout(
                                                                         Duration::from_secs(WRITE_TIMEOUT),
-                                                                        peripheral
-                                                                        .write(
+                                                                        peripheral.write(
                                                                             characteristic,
                                                                             data.to_vec(),
-                                                                            WriteType::WithResponse,
-                                                                        ))
-                                                                        .await
+                                                                            if args.without_response {
+                                                                                WriteType::WithoutResponse
+                                                                            } else {
+                                                                                WriteType::WithResponse
+                                                                            },
+                                                                        ),
+                                                                    )
+                                                                    .await
                                                                     {
                                                                         Ok(Ok(_)) => eprintln!(
                                                                             "Write Successful: {}",
@@ -140,10 +133,12 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                                                         ),
                                                                     }
                                                                 } else {
-                                                                    eprintln!("ERROR: Characteristic {} not writeable", characteristic.uuid);
+                                                                    eprintln!(
+                                                                        "ERROR: Characteristic {} not writeable",
+                                                                        characteristic.uuid
+                                                                    );
                                                                 }
-                                                                WRITE_COMPLETE
-                                                                    .store(true, Ordering::Relaxed);
+                                                                WRITE_COMPLETE.store(true, Ordering::Relaxed);
                                                                 break 'services;
                                                             }
                                                         }
@@ -151,23 +146,14 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                                 }
                                             }
                                             _ => {
-                                                eprintln!(
-                                                    "Service discovery failed/timeout for {}",
-                                                    peripheral.id()
-                                                )
+                                                eprintln!("Service discovery failed/timeout for {}", peripheral.id())
                                             }
                                         }
-                                        if let Err(e) = timeout(
-                                            Duration::from_secs(DISCONNECT_TIMEOUT),
-                                            peripheral.disconnect(),
-                                        )
-                                        .await
+                                        if let Err(e) =
+                                            timeout(Duration::from_secs(DISCONNECT_TIMEOUT), peripheral.disconnect())
+                                                .await
                                         {
-                                            eprintln!(
-                                                "Disconnect timeout/error for {}: {:?}",
-                                                peripheral.id(),
-                                                e
-                                            );
+                                            eprintln!("Disconnect timeout/error for {}: {:?}", peripheral.id(), e);
                                         }
                                     }
                                     _ => {

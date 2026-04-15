@@ -1,7 +1,5 @@
-use anyhow::{anyhow, Context};
-use btleplug::api::{
-    bleuuid::BleUuid, Central, CentralEvent, CharPropFlags, Peripheral as _, ScanFilter,
-};
+use anyhow::{Context, anyhow};
+use btleplug::api::{Central, CentralEvent, CharPropFlags, Peripheral as _, ScanFilter, bleuuid::BleUuid};
 use btleplug::platform::{Adapter, Peripheral};
 use futures::StreamExt;
 use std::time::Duration;
@@ -10,8 +8,8 @@ use uuid::Uuid;
 
 use std::collections::{BTreeSet, HashSet};
 
-use crate::util::parse_uuid;
 use crate::PollArgs;
+use crate::util::parse_uuid;
 
 use crate::types::{CharacteristicInfo, DeviceInfo, ServiceInfo};
 use crate::util::format_properties;
@@ -19,10 +17,6 @@ use crate::{CHARACTERISTIC_MAP, SERVICE_MAP};
 use crate::{CONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
 
 pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
-    if !args.characteristic.is_empty() && args.service.is_empty() {
-        anyhow::bail!("--characteristic requires --service");
-    }
-
     // Convert service filter to HashSet<Uuid>
     let service_filter = args
         .service
@@ -66,6 +60,7 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
                         Ok(peripheral) => {
                             // Get basic info first (fast)
                             let device = DeviceInfo::new(&peripheral).await?;
+
                             // Filter by RSSI
                             if let Some(rssi) = args.rssi {
                                 if device.rssi < rssi {
@@ -139,12 +134,7 @@ async fn poll(
 ) -> anyhow::Result<()> {
     match timeout(Duration::from_secs(CONNECT_TIMEOUT), p.connect()).await {
         Ok(Ok(_)) => {
-            match timeout(
-                Duration::from_secs(ENUMERATE_TIMEOUT),
-                p.discover_services(),
-            )
-            .await
-            {
+            match timeout(Duration::from_secs(ENUMERATE_TIMEOUT), p.discover_services()).await {
                 Ok(Ok(_)) => {
                     let services = if service_filter.is_empty() {
                         p.services()
@@ -155,9 +145,7 @@ async fn poll(
                             .collect::<BTreeSet<_>>()
                     };
                     if !services.is_empty() {
-                        let mut ticker = tokio::time::interval(Duration::from_millis(
-                            (interval * 1000.0) as u64,
-                        ));
+                        let mut ticker = tokio::time::interval(Duration::from_millis((interval * 1000.0) as u64));
                         loop {
                             ticker.tick().await; // First tick returns immediately
                             let mut service_info = Vec::new();
@@ -169,16 +157,9 @@ async fn poll(
                                     {
                                         chars.push(CharacteristicInfo {
                                             uuid: characteristic.uuid.to_short_string(),
-                                            properties: format_properties(
-                                                characteristic.properties,
-                                            ),
-                                            char_type: CHARACTERISTIC_MAP
-                                                .get(&characteristic.uuid)
-                                                .map(|v| &**v),
-                                            value: if characteristic
-                                                .properties
-                                                .contains(CharPropFlags::READ)
-                                            {
+                                            properties: format_properties(characteristic.properties),
+                                            char_type: CHARACTERISTIC_MAP.get(&characteristic.uuid).map(|v| &**v),
+                                            value: if characteristic.properties.contains(CharPropFlags::READ) {
                                                 p.read(characteristic).await.ok()
                                             } else {
                                                 None
@@ -186,22 +167,36 @@ async fn poll(
                                         });
                                     }
                                 }
-                                service_info.push(ServiceInfo {
-                                    uuid: service.uuid.to_short_string(),
-                                    service_type: SERVICE_MAP.get(&service.uuid).map(|v| &**v),
-                                    characteristics: chars,
-                                });
+                                // Dont add services with no matching characteristics
+                                if !chars.is_empty() {
+                                    service_info.push(ServiceInfo {
+                                        uuid: service.uuid.to_short_string(),
+                                        service_type: SERVICE_MAP.get(&service.uuid).map(|v| &**v),
+                                        characteristics: chars,
+                                    });
+                                }
                             }
-                            let device = DeviceInfo {
-                                id: device.id.clone(),
-                                name: device.name.clone(),
-                                rssi: device.rssi, // RSSI doesnt seem to be updated
-                                services: service_info.clone(),
-                            };
-                            if json {
-                                println!("{}", serde_json::to_string(&device)?);
+                            // Only show devices with matching services
+                            if service_info.is_empty() {
+                                break;
                             } else {
-                                print!("[+] Device: {}", device);
+                                // Update rssi
+                                let rssi = if let Ok(Some(properties)) = p.properties().await {
+                                    properties.rssi.unwrap_or(0)
+                                } else {
+                                    0
+                                };
+                                let device = DeviceInfo {
+                                    id: device.id.clone(),
+                                    name: device.name.clone(),
+                                    rssi,
+                                    services: service_info.clone(),
+                                };
+                                if json {
+                                    println!("{}", serde_json::to_string(&device)?);
+                                } else {
+                                    print!("[+] Device: {}", device);
+                                }
                             }
                         }
                     }

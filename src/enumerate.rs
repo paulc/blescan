@@ -20,10 +20,6 @@ use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
 static MATCHES: AtomicU32 = AtomicU32::new(0);
 
 pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
-    if !args.characteristic.is_empty() && args.service.is_empty() {
-        anyhow::bail!("--characteristic requires --service");
-    }
-
     // Convert service filter to HashSet<Uuid>
     let service_filter = args
         .service
@@ -196,11 +192,15 @@ async fn enumerate_services(
                                 });
                             }
                         }
-                        service_info.push(ServiceInfo {
-                            uuid: service.uuid.to_short_string(),
-                            service_type: SERVICE_MAP.get(&service.uuid).map(|v| &**v),
-                            characteristics: chars,
-                        });
+                        // If characteristic filter is not empty only add services with
+                        // matching characteristics
+                        if characteristic_filter.is_empty() || !chars.is_empty() {
+                            service_info.push(ServiceInfo {
+                                uuid: service.uuid.to_short_string(),
+                                service_type: SERVICE_MAP.get(&service.uuid).map(|v| &**v),
+                                characteristics: chars,
+                            });
+                        }
                     }
                 }
                 _ => {
@@ -216,7 +216,9 @@ async fn enumerate_services(
             // eprintln!("Connect timeout/error for {}", p.id())
         }
     }
-    if service_info.is_empty() && !service_filter.is_empty() {
+    // If filters are active return None if no service/characteristic matches
+    if service_info.is_empty() && (!service_filter.is_empty() || !characteristic_filter.is_empty())
+    {
         Ok(None)
     } else {
         Ok(Some(service_info))

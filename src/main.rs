@@ -93,6 +93,10 @@ struct EnumerateArgs {
     #[argh(option)]
     timeout: Option<u64>,
 
+    /// decode format <characteristic_uuid::fmt>
+    #[argh(option)]
+    decode: Vec<String>,
+
     /// NDJSON output
     #[argh(switch)]
     json: bool,
@@ -144,21 +148,21 @@ struct PollArgs {
 /// Subscribe/listen for notify events
 #[argh(subcommand, name = "notify")]
 struct NotifyArgs {
-    /// device name
+    /// filter device name [multiple allowed]
     #[argh(option)]
-    name: Option<String>,
+    name: Vec<String>,
 
-    /// device uuid
+    /// filter device uuid [multiple allowed]
     #[argh(option)]
-    device: Option<String>,
+    device: Vec<String>,
 
-    /// service uuid
+    /// filter service uuid [multiple allowed]
     #[argh(option)]
-    service: String,
+    service: Vec<String>,
 
-    /// characteristic uuid
+    /// filter characteristic uuid [multiple allowed]
     #[argh(option)]
-    characteristic: String,
+    characteristic: Vec<String>,
 
     /// minimum RSSI
     #[argh(option)]
@@ -204,6 +208,10 @@ struct WriteArgs {
     /// scan timeout
     #[argh(option)]
     timeout: Option<u64>,
+
+    /// force write without response
+    #[argh(switch)]
+    without_response: bool,
 
     /// NDJSON output
     #[argh(switch)]

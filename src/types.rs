@@ -1,4 +1,4 @@
-use btleplug::api::{bleuuid::BleUuid, Peripheral as _};
+use btleplug::api::{Peripheral as _, bleuuid::BleUuid};
 use btleplug::platform::Peripheral;
 
 use hex;
@@ -18,10 +18,7 @@ impl DeviceInfo {
     pub async fn new(p: &Peripheral) -> anyhow::Result<Self> {
         let properties = p.properties().await?.unwrap_or_default();
         let id = p.id();
-        let name = properties
-            .local_name
-            .clone()
-            .unwrap_or_else(|| "Unknown".to_string());
+        let name = properties.local_name.clone().unwrap_or_else(|| "Unknown".to_string());
         let rssi = properties.rssi.unwrap_or(0);
         // Read basic service data from the advertisment
         // but this may miss some services (only advertised
@@ -94,21 +91,14 @@ pub struct CharacteristicInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(skip_deserializing)]
     pub char_type: Option<&'static str>,
-    #[serde(
-        serialize_with = "serialize_hex_option",
-        deserialize_with = "deserialize_hex_option"
-    )]
+    #[serde(serialize_with = "serialize_hex_option", deserialize_with = "deserialize_hex_option")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Vec<u8>>,
 }
 
 impl std::fmt::Display for CharacteristicInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
-            f,
-            "    └─ Characteristic: {} {}",
-            self.uuid, self.properties
-        )?;
+        writeln!(f, "    └─ Characteristic: {} {}", self.uuid, self.properties)?;
         if let Some(t) = self.char_type {
             writeln!(f, "       Type: {}", t)?;
         }
@@ -131,7 +121,7 @@ impl std::fmt::Display for NotificationInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Notification :: Service: {} / Characteristic: {} / Value: 0x{}",
+            "Notification >> Service: {}\n                └─ Characteristic: {}\n                └─ Value: 0x{}",
             self.service,
             self.characteristic,
             hex::encode(&self.value)
