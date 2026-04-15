@@ -139,6 +139,10 @@ struct PollArgs {
     #[argh(option)]
     timeout: Option<u64>,
 
+    /// decode format <characteristic_uuid::fmt>
+    #[argh(option)]
+    decode: Vec<String>,
+
     /// NDJSON output
     #[argh(switch)]
     json: bool,
@@ -171,6 +175,10 @@ struct NotifyArgs {
     /// timeout
     #[argh(option)]
     timeout: Option<u64>,
+
+    /// decode format <characteristic_uuid::fmt>
+    #[argh(option)]
+    decode: Vec<String>,
 
     /// NDJSON output
     #[argh(switch)]

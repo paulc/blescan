@@ -6,29 +6,19 @@ use std::time::Duration;
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::NotifyArgs;
+use crate::char_data::CharFormat;
 use crate::types::{DeviceInfo, NotificationInfo};
-use crate::util::parse_uuid;
+use crate::util::{parse_decoder, parse_uuid, uuid_filter};
 use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
 
 pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
-    // Convert service filter to HashSet<Uuid>
-    let service_filter = args
-        .service
-        .iter()
-        .map(|s| parse_uuid(s))
-        .collect::<Result<HashSet<Uuid>, _>>()
-        .context("Error Parsing Service UUID")?;
-
-    // Convert characteristic filter to HashSet<Uuid>
-    let characteristic_filter = args
-        .characteristic
-        .iter()
-        .map(|s| parse_uuid(s))
-        .collect::<Result<HashSet<Uuid>, _>>()
-        .context("Error Parsing Characteristic UUID")?;
+    let service_filter = uuid_filter(&args.service)?;
+    let characteristic_filter = uuid_filter(&args.characteristic)?;
+    let decode_map = parse_decoder(&args.decode)?;
 
     // Validate device uuids
     args.device
@@ -75,10 +65,19 @@ pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
                             }
 
                             // Connect to device in background
-                            let service_filter = service_filter.clone();
-                            let characteristic_filter = characteristic_filter.clone();
+                            let service_filter = Arc::clone(&service_filter);
+                            let characteristic_filter = Arc::clone(&characteristic_filter);
+                            let decode_map = Arc::clone(&decode_map);
+
                             tokio::spawn(async move {
-                                notify(&peripheral, &service_filter, &characteristic_filter, args.json).await?;
+                                notify(
+                                    &peripheral,
+                                    &service_filter,
+                                    &characteristic_filter,
+                                    args.json,
+                                    &decode_map,
+                                )
+                                .await?;
                                 Ok::<(), anyhow::Error>(())
                             });
                         }
@@ -118,6 +117,7 @@ async fn notify(
     service_filter: &HashSet<Uuid>,
     characteristic_filter: &HashSet<Uuid>,
     json: bool,
+    decode_map: &HashMap<Uuid, CharFormat>,
 ) -> anyhow::Result<()> {
     match timeout(Duration::from_secs(CONNECT_TIMEOUT), peripheral.connect()).await {
         Ok(Ok(_)) => {
@@ -142,7 +142,7 @@ async fn notify(
                                     peripheral.subscribe(&characteristic).await?;
                                     if !json {
                                         eprintln!(
-                                            "Subscribed :: Device: {}\n               └─ Service: {}\n                  └─ Characteristic: {}",
+                                            "Subscribed :: Device: {}\n              └─ Service: {}\n                  └─ Characteristic: {}",
                                             peripheral.id(),
                                             service.uuid,
                                             characteristic.uuid
@@ -157,10 +157,14 @@ async fn notify(
                     if subscribed {
                         let mut notification_stream = peripheral.notifications().await?;
                         while let Some(notification) = notification_stream.next().await {
+                            let decoded = decode_map
+                                .get(&notification.uuid)
+                                .map(|fmt| fmt.decode(&notification.value));
                             let n = NotificationInfo {
                                 service: notification.service_uuid.to_short_string(),
                                 characteristic: notification.uuid.to_short_string(),
                                 value: notification.value,
+                                decoded,
                             };
                             if json {
                                 println!("{}", serde_json::to_string(&n)?);

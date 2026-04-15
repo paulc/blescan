@@ -1,4 +1,11 @@
+use anyhow::Context;
 use btleplug::api::CharPropFlags;
+use uuid::Uuid;
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use crate::char_data::CharFormat;
 
 pub fn format_properties(props: CharPropFlags) -> String {
     let mut p = Vec::new();
@@ -48,4 +55,30 @@ pub fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
     } else {
         uuid::Uuid::parse_str(s)
     }
+}
+
+pub fn uuid_filter(filters: &Vec<String>) -> anyhow::Result<Arc<HashSet<Uuid>>> {
+    Ok(Arc::new(
+        filters
+            .iter()
+            .map(|s| parse_uuid(s))
+            .collect::<Result<HashSet<Uuid>, _>>()
+            .context("Error Parsing UUID")?,
+    ))
+}
+
+pub fn parse_decoder(decoders: &Vec<String>) -> anyhow::Result<Arc<HashMap<Uuid, CharFormat>>> {
+    Ok(Arc::new(
+        decoders
+            .iter()
+            .map(|s| {
+                s.split_once("::").context("Invalid Format").and_then(|(uuid, fmt)| {
+                    let uuid = parse_uuid(uuid)?;
+                    let fmt = CharFormat::try_from(fmt)?;
+                    Ok((uuid, fmt))
+                })
+            })
+            .collect::<Result<HashMap<_, _>, _>>()
+            .context("Error Parsing Decode Mapping")?,
+    ))
 }

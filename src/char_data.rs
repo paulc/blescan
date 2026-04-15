@@ -1,6 +1,24 @@
 use std::fmt::{self, Display, Formatter};
 use std::num::ParseIntError;
 
+#[derive(Debug, Clone)]
+pub enum CharDataError {
+    ParseIntError(ParseIntError),
+    FormatError(String),
+}
+
+impl Display for CharDataError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            CharDataError::ParseIntError(msg) => write!(f, "Invalid integer: {}", msg),
+            CharDataError::FormatError(msg) => write!(f, "Invalid format: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for CharDataError {}
+
+#[derive(Debug, Clone)]
 pub enum CharFormat {
     U8,
     I8,
@@ -31,45 +49,50 @@ impl TryFrom<&str> for CharFormat {
     }
 }
 
+impl CharFormat {
+    pub fn decode(&self, data: &Vec<u8>) -> String {
+        match self {
+            CharFormat::U8 => TryInto::<[u8; 1]>::try_into(data.as_slice())
+                .map(|a| format!("{}", u8::from_le_bytes(a)))
+                .unwrap_or("<Invalid Format>".into()),
+            CharFormat::I8 => TryInto::<[u8; 1]>::try_into(data.as_slice())
+                .map(|a| format!("{}", i8::from_le_bytes(a)))
+                .unwrap_or("<Invalid Format>".into()),
+            CharFormat::U16 => TryInto::<[u8; 2]>::try_into(data.as_slice())
+                .map(|a| format!("{}", u16::from_le_bytes(a)))
+                .unwrap_or("<Invalid Format>".into()),
+            CharFormat::I16 => TryInto::<[u8; 2]>::try_into(data.as_slice())
+                .map(|a| format!("{}", i16::from_le_bytes(a)))
+                .unwrap_or("<Invalid Format>".into()),
+            CharFormat::U32 => TryInto::<[u8; 4]>::try_into(data.as_slice())
+                .map(|a| format!("{}", u32::from_le_bytes(a)))
+                .unwrap_or("<Invalid Format>".into()),
+            CharFormat::I32 => TryInto::<[u8; 4]>::try_into(data.as_slice())
+                .map(|a| format!("{}", i32::from_le_bytes(a)))
+                .unwrap_or("<Invalid Format>".into()),
+            CharFormat::U64 => TryInto::<[u8; 8]>::try_into(data.as_slice())
+                .map(|a| format!("{}", u64::from_le_bytes(a)))
+                .unwrap_or("<Invalid Format>".into()),
+            CharFormat::I64 => TryInto::<[u8; 8]>::try_into(data.as_slice())
+                .map(|a| format!("{}", i64::from_le_bytes(a)))
+                .unwrap_or("<Invalid Format>".into()),
+            CharFormat::Utf8 => TryInto::<String>::try_into(data.clone()).unwrap_or("<Invalid Format>".into()),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CharData(Vec<u8>);
 
 impl CharData {
+    #[allow(unused)]
+    pub fn new(data: &Vec<u8>) -> Self {
+        Self(data.clone())
+    }
     pub fn to_vec(&self) -> &Vec<u8> {
         &self.0
     }
-    pub fn decode(&self, format: CharFormat) -> String {
-        match format {
-            CharFormat::U8 => TryInto::<u8>::try_into(self).map(|v| format!("{}", v)),
-            CharFormat::I8 => TryInto::<i8>::try_into(self).map(|v| format!("{}", v)),
-            CharFormat::U16 => TryInto::<u16>::try_into(self).map(|v| format!("{}", v)),
-            CharFormat::I16 => TryInto::<i16>::try_into(self).map(|v| format!("{}", v)),
-            CharFormat::U32 => TryInto::<u32>::try_into(self).map(|v| format!("{}", v)),
-            CharFormat::I32 => TryInto::<i32>::try_into(self).map(|v| format!("{}", v)),
-            CharFormat::U64 => TryInto::<u64>::try_into(self).map(|v| format!("{}", v)),
-            CharFormat::I64 => TryInto::<i64>::try_into(self).map(|v| format!("{}", v)),
-            CharFormat::Utf8 => TryInto::<String>::try_into(self),
-        }
-        .unwrap_or("<Invalid Format>".into())
-    }
 }
-
-#[derive(Debug, Clone)]
-pub enum CharDataError {
-    ParseIntError(ParseIntError),
-    FormatError(String),
-}
-
-impl Display for CharDataError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            CharDataError::ParseIntError(msg) => write!(f, "Invalid integer: {}", msg),
-            CharDataError::FormatError(msg) => write!(f, "Invalid format: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for CharDataError {}
 
 /// Macro to create From<_> implementation for int types
 macro_rules! chardata_from_int {
@@ -84,42 +107,6 @@ macro_rules! chardata_from_int {
     };
 }
 chardata_from_int!(i8, u8, i16, u16, i32, u32, i64, u64);
-
-/// Macro to create Into<_> implementation for int types
-macro_rules! chardata_into_int {
-    ($(($int_type:ty, $byte_size:expr)),* $(,)?) => {
-        $(
-            impl TryInto<$int_type> for &CharData {
-                type Error = CharDataError;
-                fn try_into(self) -> Result<$int_type, Self::Error> {
-                    let array: [u8; $byte_size] = self
-                        .0
-                        .clone()
-                        .try_into()
-                        .map_err(|_| CharDataError::FormatError("Invalid length".into()))?;
-                    Ok(<$int_type>::from_le_bytes(array))
-                }
-            }
-        )*
-    };
-}
-chardata_into_int!(
-    (u8, 1),
-    (i8, 1),
-    (u16, 2),
-    (i16, 2),
-    (u32, 4),
-    (i32, 4),
-    (u64, 8),
-    (i64, 8),
-);
-
-impl TryInto<String> for &CharData {
-    type Error = CharDataError;
-    fn try_into(self) -> Result<String, Self::Error> {
-        String::from_utf8(self.0.clone()).map_err(|e| CharDataError::FormatError(e.to_string()))
-    }
-}
 
 /// Macro to parse typed int (with optional 0x prexix) into CharData
 macro_rules! parse_int_type {

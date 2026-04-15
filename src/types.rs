@@ -94,6 +94,8 @@ pub struct CharacteristicInfo {
     #[serde(serialize_with = "serialize_hex_option", deserialize_with = "deserialize_hex_option")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Vec<u8>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decoded: Option<String>,
 }
 
 impl std::fmt::Display for CharacteristicInfo {
@@ -105,6 +107,9 @@ impl std::fmt::Display for CharacteristicInfo {
         if let Some(ref value) = self.value {
             writeln!(f, "       Value: 0x{}", hex::encode(value))?;
         }
+        if let Some(ref decoded) = self.decoded {
+            writeln!(f, "       Decoded: {}", decoded)?;
+        }
         Ok(())
     }
 }
@@ -115,17 +120,30 @@ pub struct NotificationInfo {
     pub characteristic: String,
     #[serde(serialize_with = "serialize_hex", deserialize_with = "deserialize_hex")]
     pub value: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decoded: Option<String>,
 }
 
 impl std::fmt::Display for NotificationInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Notification >> Service: {}\n                └─ Characteristic: {}\n                └─ Value: 0x{}",
-            self.service,
-            self.characteristic,
-            hex::encode(&self.value)
-        )?;
+        if let Some(ref decoded) = self.decoded {
+            write!(
+                f,
+                "Notification >> Service: {}\n                └─ Characteristic: {}\n                   Value: 0x{}\n                   Decoded: {}",
+                self.service,
+                self.characteristic,
+                hex::encode(&self.value),
+                decoded
+            )?;
+        } else {
+            write!(
+                f,
+                "Notification >> Service: {}\n                └─ Characteristic: {}\n                   Value: 0x{}",
+                self.service,
+                self.characteristic,
+                hex::encode(&self.value)
+            )?;
+        }
         Ok(())
     }
 }

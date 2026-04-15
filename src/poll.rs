@@ -6,32 +6,20 @@ use std::time::Duration;
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::PollArgs;
-use crate::util::parse_uuid;
-
+use crate::char_data::CharFormat;
 use crate::types::{CharacteristicInfo, DeviceInfo, ServiceInfo};
-use crate::util::format_properties;
+use crate::util::{format_properties, parse_decoder, parse_uuid, uuid_filter};
 use crate::{CHARACTERISTIC_MAP, SERVICE_MAP};
 use crate::{CONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
 
 pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
-    // Convert service filter to HashSet<Uuid>
-    let service_filter = args
-        .service
-        .iter()
-        .map(|s| parse_uuid(s))
-        .collect::<Result<HashSet<Uuid>, _>>()
-        .context("Error Parsing Service UUID")?;
-
-    // Convert characteristic filter to HashSet<Uuid>
-    let characteristic_filter = args
-        .characteristic
-        .iter()
-        .map(|s| parse_uuid(s))
-        .collect::<Result<HashSet<Uuid>, _>>()
-        .context("Error Parsing Characteristic UUID")?;
+    let service_filter = uuid_filter(&args.service)?;
+    let characteristic_filter = uuid_filter(&args.characteristic)?;
+    let decode_map = parse_decoder(&args.decode)?;
 
     // Validate device uuids
     args.device
@@ -78,8 +66,10 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
                             }
 
                             // Poll device in background
-                            let service_filter = service_filter.clone();
-                            let characteristic_filter = characteristic_filter.clone();
+                            let service_filter = Arc::clone(&service_filter);
+                            let characteristic_filter = Arc::clone(&characteristic_filter);
+                            let decode_map = Arc::clone(&decode_map);
+
                             tokio::spawn(async move {
                                 poll(
                                     &peripheral,
@@ -88,6 +78,7 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
                                     &characteristic_filter,
                                     args.interval,
                                     args.json,
+                                    &decode_map,
                                 )
                                 .await?;
                                 Ok::<(), anyhow::Error>(())
@@ -131,6 +122,7 @@ async fn poll(
     characteristic_filter: &HashSet<Uuid>,
     interval: f64,
     json: bool,
+    decode_map: &HashMap<Uuid, CharFormat>,
 ) -> anyhow::Result<()> {
     match timeout(Duration::from_secs(CONNECT_TIMEOUT), p.connect()).await {
         Ok(Ok(_)) => {
@@ -155,15 +147,23 @@ async fn poll(
                                     if characteristic_filter.is_empty()
                                         || characteristic_filter.contains(&characteristic.uuid)
                                     {
+                                        // Get raw and decoded values
+                                        let (value, decoded) =
+                                            if characteristic.properties.contains(CharPropFlags::READ) {
+                                                let value = p.read(characteristic).await.ok();
+                                                let decoded = value.as_ref().and_then(|v| {
+                                                    decode_map.get(&characteristic.uuid).map(|fmt| fmt.decode(v))
+                                                });
+                                                (value, decoded)
+                                            } else {
+                                                (None, None)
+                                            };
                                         chars.push(CharacteristicInfo {
                                             uuid: characteristic.uuid.to_short_string(),
                                             properties: format_properties(characteristic.properties),
                                             char_type: CHARACTERISTIC_MAP.get(&characteristic.uuid).map(|v| &**v),
-                                            value: if characteristic.properties.contains(CharPropFlags::READ) {
-                                                p.read(characteristic).await.ok()
-                                            } else {
-                                                None
-                                            },
+                                            value,
+                                            decoded,
                                         });
                                     }
                                 }

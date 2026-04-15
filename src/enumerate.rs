@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Context};
-use btleplug::api::{bleuuid::BleUuid, CharPropFlags, Peripheral as _};
+use anyhow::{Context, anyhow};
 use btleplug::api::{Central, CentralEvent, ScanFilter};
+use btleplug::api::{CharPropFlags, Peripheral as _, bleuuid::BleUuid};
 use btleplug::platform::Adapter;
 use btleplug::platform::Peripheral;
 use futures::StreamExt;
@@ -8,33 +8,23 @@ use std::time::Duration;
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::types::{CharacteristicInfo, DeviceInfo, ServiceInfo};
-use crate::util::{format_properties, parse_uuid};
 use crate::EnumerateArgs;
+use crate::char_data::CharFormat;
+use crate::types::{CharacteristicInfo, DeviceInfo, ServiceInfo};
+use crate::util::{format_properties, parse_decoder, parse_uuid, uuid_filter};
 use crate::{CHARACTERISTIC_MAP, SERVICE_MAP};
 use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
 
 static MATCHES: AtomicU32 = AtomicU32::new(0);
 
 pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
-    // Convert service filter to HashSet<Uuid>
-    let service_filter = args
-        .service
-        .iter()
-        .map(|s| parse_uuid(s))
-        .collect::<Result<HashSet<Uuid>, _>>()
-        .context("Error Parsing Service UUID")?;
-
-    // Convert characteristic filter to HashSet<Uuid>
-    let characteristic_filter = args
-        .characteristic
-        .iter()
-        .map(|s| parse_uuid(s))
-        .collect::<Result<HashSet<Uuid>, _>>()
-        .context("Error Parsing Characteristic UUID")?;
+    let service_filter = uuid_filter(&args.service)?;
+    let characteristic_filter = uuid_filter(&args.characteristic)?;
+    let decode_map = parse_decoder(&args.decode)?;
 
     // Validate device uuids
     args.device
@@ -78,8 +68,9 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                                 continue;
                             }
                             // Spawn enumeration in background so we don't block events
-                            let service_filter = service_filter.clone();
-                            let characteristic_filter = characteristic_filter.clone();
+                            let service_filter = Arc::clone(&service_filter);
+                            let characteristic_filter = Arc::clone(&characteristic_filter);
+                            let decode_map = Arc::clone(&decode_map);
 
                             tokio::spawn(async move {
                                 match enumerate_services(
@@ -87,6 +78,7 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                                     args.read,
                                     &service_filter,
                                     &characteristic_filter,
+                                    &decode_map,
                                 )
                                 .await
                                 {
@@ -117,10 +109,7 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                     // eprintln!(">> EVENT: {:?}", event);
                 }
             }
-            if args
-                .max
-                .is_some_and(|max| MATCHES.load(Ordering::Relaxed) >= max)
-            {
+            if args.max.is_some_and(|max| MATCHES.load(Ordering::Relaxed) >= max) {
                 break;
             }
         }
@@ -151,16 +140,12 @@ async fn enumerate_services(
     read: bool,
     service_filter: &HashSet<Uuid>,
     characteristic_filter: &HashSet<Uuid>,
+    decode_map: &HashMap<Uuid, CharFormat>,
 ) -> anyhow::Result<Option<Vec<ServiceInfo>>> {
     let mut service_info = Vec::new();
     match timeout(Duration::from_secs(CONNECT_TIMEOUT), p.connect()).await {
         Ok(Ok(_)) => {
-            match timeout(
-                Duration::from_secs(ENUMERATE_TIMEOUT),
-                p.discover_services(),
-            )
-            .await
-            {
+            match timeout(Duration::from_secs(ENUMERATE_TIMEOUT), p.discover_services()).await {
                 Ok(Ok(_)) => {
                     let services = if service_filter.is_empty() {
                         p.services()
@@ -173,22 +158,25 @@ async fn enumerate_services(
                     for service in services {
                         let mut chars = Vec::new();
                         for characteristic in &service.characteristics {
-                            if characteristic_filter.is_empty()
-                                || characteristic_filter.contains(&characteristic.uuid)
+                            if characteristic_filter.is_empty() || characteristic_filter.contains(&characteristic.uuid)
                             {
+                                // Get raw and decoded values
+                                let (value, decoded) =
+                                    if read && characteristic.properties.contains(CharPropFlags::READ) {
+                                        let value = p.read(characteristic).await.ok();
+                                        let decoded = value.as_ref().and_then(|v| {
+                                            decode_map.get(&characteristic.uuid).map(|fmt| fmt.decode(v))
+                                        });
+                                        (value, decoded)
+                                    } else {
+                                        (None, None)
+                                    };
                                 chars.push(CharacteristicInfo {
                                     uuid: characteristic.uuid.to_short_string(),
                                     properties: format_properties(characteristic.properties),
-                                    char_type: CHARACTERISTIC_MAP
-                                        .get(&characteristic.uuid)
-                                        .map(|v| &**v),
-                                    value: if read
-                                        && characteristic.properties.contains(CharPropFlags::READ)
-                                    {
-                                        p.read(characteristic).await.ok()
-                                    } else {
-                                        None
-                                    },
+                                    char_type: CHARACTERISTIC_MAP.get(&characteristic.uuid).map(|v| &**v),
+                                    value,
+                                    decoded,
                                 });
                             }
                         }
@@ -207,8 +195,7 @@ async fn enumerate_services(
                     // eprintln!("Service discovery failed/timeout for {}", p.id())
                 }
             }
-            if let Err(_e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), p.disconnect()).await
-            {
+            if let Err(_e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), p.disconnect()).await {
                 // eprintln!("Disconnect timeout/error for {}: {:?}", p.id(), e);
             }
         }
@@ -217,8 +204,7 @@ async fn enumerate_services(
         }
     }
     // If filters are active return None if no service/characteristic matches
-    if service_info.is_empty() && (!service_filter.is_empty() || !characteristic_filter.is_empty())
-    {
+    if service_info.is_empty() && (!service_filter.is_empty() || !characteristic_filter.is_empty()) {
         Ok(None)
     } else {
         Ok(Some(service_info))
