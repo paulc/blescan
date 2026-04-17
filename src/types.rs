@@ -1,17 +1,21 @@
-use btleplug::api::{Peripheral as _, bleuuid::BleUuid};
+use btleplug::api::{CharPropFlags, Characteristic, Peripheral as _, PeripheralProperties, Service, bleuuid::BleUuid};
 use btleplug::platform::Peripheral;
 
 use hex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::{BTreeSet, HashMap};
+use uuid::Uuid;
 
-use crate::SERVICE_MAP;
+use crate::char_data::CharFormat;
+use crate::util::format_properties;
+use crate::{CHARACTERISTIC_MAP, SERVICE_MAP};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
     pub id: String,
     pub name: String,
     pub rssi: i16,
-    pub services: Vec<ServiceInfo>,
+    pub services: HashMap<Uuid, ServiceInfo>,
 }
 
 impl DeviceInfo {
@@ -26,12 +30,17 @@ impl DeviceInfo {
         let services = properties
             .services
             .iter()
-            .map(|uuid| ServiceInfo {
-                uuid: uuid.to_short_string(),
-                service_type: SERVICE_MAP.get(uuid).map(|v| &**v),
-                characteristics: Vec::new(),
+            .map(|&uuid| {
+                (
+                    uuid,
+                    ServiceInfo {
+                        uuid: uuid,
+                        service_type: SERVICE_MAP.get(&uuid).map(|v| &**v),
+                        characteristics: HashMap::new(),
+                    },
+                )
             })
-            .collect::<Vec<_>>();
+            .collect::<HashMap<_, _>>();
         Ok(DeviceInfo {
             id: id.to_string(),
             name: name,
@@ -39,13 +48,18 @@ impl DeviceInfo {
             services,
         })
     }
+    pub async fn update_rssi(&mut self, p: &Peripheral) {
+        if let Ok(Some(PeripheralProperties { rssi: Some(rssi), .. })) = p.properties().await {
+            self.rssi = rssi
+        }
+    }
 }
 
 impl std::fmt::Display for DeviceInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{} | {} | {} dBm", self.id, self.name, self.rssi)?;
         for s in &self.services {
-            write!(f, "{}", s)?;
+            write!(f, "{}", s.1)?;
         }
         Ok(())
     }
@@ -53,17 +67,27 @@ impl std::fmt::Display for DeviceInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceInfo {
-    pub uuid: String,
+    pub uuid: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(skip_deserializing)]
     pub service_type: Option<&'static str>,
-    pub characteristics: Vec<CharacteristicInfo>,
+    pub characteristics: HashMap<Uuid, CharacteristicInfo>,
+}
+
+impl ServiceInfo {
+    pub fn new(s: &Service) -> Self {
+        Self {
+            uuid: s.uuid.clone(),
+            service_type: SERVICE_MAP.get(&s.uuid).map(|&v| &*v),
+            characteristics: HashMap::new(),
+        }
+    }
 }
 
 impl std::fmt::Display for ServiceInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.characteristics.is_empty() {
-            writeln!(f, "    Service: {}", self.uuid,)?;
+            writeln!(f, "    Service: {}", self.uuid.to_short_string(),)?;
         } else {
             writeln!(
                 f,
@@ -77,7 +101,7 @@ impl std::fmt::Display for ServiceInfo {
                 self.characteristics.len()
             )?;
             for c in &self.characteristics {
-                write!(f, "{}", c)?;
+                write!(f, "{}", c.1)?;
             }
         }
         Ok(())
@@ -86,8 +110,11 @@ impl std::fmt::Display for ServiceInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacteristicInfo {
-    pub uuid: String,
-    pub properties: String,
+    pub uuid: Uuid,
+    pub service_uuid: Uuid,
+    #[serde(skip_deserializing)]
+    #[serde(serialize_with = "serialize_char_props")]
+    pub properties: CharPropFlags,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(skip_deserializing)]
     pub char_type: Option<&'static str>,
@@ -98,9 +125,44 @@ pub struct CharacteristicInfo {
     pub decoded: Option<String>,
 }
 
+impl CharacteristicInfo {
+    pub fn new(c: &Characteristic) -> Self {
+        Self {
+            uuid: c.uuid.clone(),
+            service_uuid: c.service_uuid.clone(),
+            properties: c.properties.clone(),
+            char_type: CHARACTERISTIC_MAP.get(&c.uuid).map(|v| &**v),
+            value: None,
+            decoded: None,
+        }
+    }
+    pub fn to_characteristic(&self) -> Characteristic {
+        Characteristic {
+            uuid: self.uuid.clone(),
+            service_uuid: self.service_uuid.clone(),
+            properties: self.properties.clone(),
+            descriptors: BTreeSet::new(),
+        }
+    }
+    pub async fn read(&mut self, p: &Peripheral, map: &HashMap<Uuid, CharFormat>) -> () {
+        if self.properties.contains(CharPropFlags::READ) {
+            self.value = p.read(&self.to_characteristic()).await.ok();
+            self.decoded = self
+                .value
+                .as_ref()
+                .and_then(|v| map.get(&self.uuid).map(|fmt| fmt.decode(v)));
+        }
+    }
+}
+
 impl std::fmt::Display for CharacteristicInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "    └─ Characteristic: {} {}", self.uuid, self.properties)?;
+        writeln!(
+            f,
+            "    └─ Characteristic: {} {}",
+            self.uuid.to_short_string(),
+            format_properties(&self.properties)
+        )?;
         if let Some(t) = self.char_type {
             writeln!(f, "       Type: {}", t)?;
         }
@@ -116,8 +178,8 @@ impl std::fmt::Display for CharacteristicInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationInfo {
-    pub service: String,
-    pub characteristic: String,
+    pub service: Uuid,
+    pub characteristic: Uuid,
     #[serde(serialize_with = "serialize_hex", deserialize_with = "deserialize_hex")]
     pub value: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -130,8 +192,8 @@ impl std::fmt::Display for NotificationInfo {
             write!(
                 f,
                 "Notification >> Service: {}\n                └─ Characteristic: {}\n                   Value: 0x{}\n                   Decoded: {}",
-                self.service,
-                self.characteristic,
+                self.service.to_short_string(),
+                self.characteristic.to_short_string(),
                 hex::encode(&self.value),
                 decoded
             )?;
@@ -139,8 +201,8 @@ impl std::fmt::Display for NotificationInfo {
             write!(
                 f,
                 "Notification >> Service: {}\n                └─ Characteristic: {}\n                   Value: 0x{}",
-                self.service,
-                self.characteristic,
+                self.service.to_short_string(),
+                self.characteristic.to_short_string(),
                 hex::encode(&self.value)
             )?;
         }
@@ -162,6 +224,13 @@ where
     let s = String::deserialize(deserializer)?;
     let s = s.strip_prefix("0x").unwrap_or(&s); // Strip 0x
     hex::decode(s).map_err(serde::de::Error::custom)
+}
+
+fn serialize_char_props<S>(props: &CharPropFlags, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&format_properties(props))
 }
 
 fn serialize_hex_option<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::char_data::CharFormat;
 
-pub fn format_properties(props: CharPropFlags) -> String {
+pub fn format_properties(props: &CharPropFlags) -> String {
     let mut p = Vec::new();
     if props.contains(CharPropFlags::BROADCAST) {
         p.push("Broadcast");

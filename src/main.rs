@@ -6,6 +6,7 @@ use argh::FromArgs;
 
 mod char_data;
 mod enumerate;
+mod filter;
 mod notify;
 mod poll;
 mod scan;
@@ -186,7 +187,7 @@ struct NotifyArgs {
 }
 
 #[derive(FromArgs, Debug)]
-/// Enumerate BLE Devices
+/// Write characteristic data
 #[argh(subcommand, name = "write")]
 struct WriteArgs {
     /// device name

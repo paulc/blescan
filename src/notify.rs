@@ -16,11 +16,15 @@ use crate::util::{parse_decoder, parse_uuid, uuid_filter};
 use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
 
 pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
+    Ok(())
+}
+/*
     let service_filter = uuid_filter(&args.service)?;
     let characteristic_filter = uuid_filter(&args.characteristic)?;
     let decode_map = parse_decoder(&args.decode)?;
 
     // Validate device uuids
+    // XXX let device_filter = uuid_filter(&args.device)?;
     args.device
         .iter()
         .map(|s| parse_uuid(s))
@@ -188,3 +192,4 @@ async fn notify(
     }
     Ok(())
 }
+*/
