@@ -8,7 +8,6 @@ use tokio::time::timeout;
 
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use crate::PollArgs;
@@ -85,7 +84,8 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
                                             (args.interval * 1000.0) as u64,
                                         ));
                                         loop {
-                                            ticker.tick().await; // First tick returns immediately
+                                            // First tick returns immediately
+                                            ticker.tick().await;
                                             // Update device data
                                             device.update_rssi(peripheral).await;
                                             for service in device.services.values_mut() {

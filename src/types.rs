@@ -50,7 +50,7 @@ impl DeviceInfo {
     }
     pub async fn update_rssi(&mut self, p: &Peripheral) {
         if let Ok(Some(PeripheralProperties { rssi: Some(rssi), .. })) = p.properties().await {
-            self.rssi = rssi
+            self.rssi = rssi;
         }
     }
 }
