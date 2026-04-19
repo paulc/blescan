@@ -197,6 +197,6 @@ blescan dump --json
 ```
 
 Filter dump by event type:
-
+```
 blescan dump --device 464694e8-0a01-005b-95b2-0ae54239625e --event DeviceDiscovered --event ManufacturerDataAdvertisement 
 ```
