@@ -2,9 +2,8 @@ use anyhow::anyhow;
 use btleplug::api::Manager as _;
 use btleplug::platform::Manager;
 
-use argh::FromArgs;
-
-mod char_data;
+mod characteristic_data;
+mod commands;
 mod enumerate;
 mod filter;
 mod notify;
@@ -14,214 +13,16 @@ mod types;
 mod util;
 mod write;
 
-use util::parse_uuid;
+use crate::commands::*;
 
-// Include UUID map
+// Include UUID maps
+use crate::util::parse_uuid; // Needed for uuid_map include
 include!(concat!(env!("OUT_DIR"), "/uuid_map.rs"));
 
 pub const ENUMERATE_TIMEOUT: u64 = 5;
 pub const CONNECT_TIMEOUT: u64 = 5;
 pub const WRITE_TIMEOUT: u64 = 5;
 pub const DISCONNECT_TIMEOUT: u64 = 1;
-
-#[derive(FromArgs, Debug)]
-/// Simple BLE scanner
-struct Args {
-    #[argh(subcommand)]
-    command: Commands,
-}
-
-#[derive(FromArgs, Debug)]
-#[argh(subcommand)]
-enum Commands {
-    Scan(ScanArgs),
-    Enumerate(EnumerateArgs),
-    Poll(PollArgs),
-    Write(WriteArgs),
-    Notify(NotifyArgs),
-}
-
-#[derive(FromArgs, Debug)]
-/// Scan BLE Devices
-#[argh(subcommand, name = "scan")]
-struct ScanArgs {
-    /// filter device name [multiple allowed]
-    #[argh(option)]
-    name: Vec<String>,
-
-    /// minimum RSSI
-    #[argh(option)]
-    rssi: Option<i16>,
-
-    /// scan timeout
-    #[argh(option)]
-    timeout: Option<u64>,
-
-    /// NDJSON output
-    #[argh(switch)]
-    json: bool,
-}
-
-#[derive(FromArgs, Debug)]
-/// Enumerate BLE Devices
-#[argh(subcommand, name = "enumerate")]
-struct EnumerateArgs {
-    /// read characteristic data
-    #[argh(switch)]
-    read: bool,
-
-    /// filter device name [multiple allowed]
-    #[argh(option)]
-    name: Vec<String>,
-
-    /// filter device uuid [multiple allowed]
-    #[argh(option)]
-    device: Vec<String>,
-
-    /// filter service uuid [multiple allowed]
-    #[argh(option)]
-    service: Vec<String>,
-
-    /// filter characteristic uuid [multiple allowed]
-    #[argh(option)]
-    characteristic: Vec<String>,
-
-    /// minimum RSSI
-    #[argh(option)]
-    rssi: Option<i16>,
-
-    /// scan timeout
-    #[argh(option)]
-    timeout: Option<u64>,
-
-    /// decode format <characteristic_uuid::type>
-    #[argh(option)]
-    decode: Vec<String>,
-
-    /// NDJSON output
-    #[argh(switch)]
-    json: bool,
-
-    /// max number of device matches (note: may be exceeded if multiple
-    /// matching tasks running in parallel)
-    #[argh(option)]
-    max: Option<u32>,
-}
-
-#[derive(FromArgs, Debug)]
-/// Read service data continuously
-#[argh(subcommand, name = "poll")]
-struct PollArgs {
-    /// read service data continuously (poll interval in s)
-    #[argh(option, default = "f64::from(5)")]
-    interval: f64,
-
-    /// filter device name [multiple allowed]
-    #[argh(option)]
-    name: Vec<String>,
-
-    /// filter device uuid [multiple allowed]
-    #[argh(option)]
-    device: Vec<String>,
-
-    /// filter service uuid [multiple allowed]
-    #[argh(option)]
-    service: Vec<String>,
-
-    /// filter characteristic uuid [multiple allowed]
-    #[argh(option)]
-    characteristic: Vec<String>,
-
-    /// minimum RSSI
-    #[argh(option)]
-    rssi: Option<i16>,
-
-    /// timeout
-    #[argh(option)]
-    timeout: Option<u64>,
-
-    /// decode format <characteristic_uuid::type>
-    #[argh(option)]
-    decode: Vec<String>,
-
-    /// NDJSON output
-    #[argh(switch)]
-    json: bool,
-}
-
-#[derive(FromArgs, Debug)]
-/// Subscribe/listen for notify events
-#[argh(subcommand, name = "notify")]
-struct NotifyArgs {
-    /// filter device name [multiple allowed]
-    #[argh(option)]
-    name: Vec<String>,
-
-    /// filter device uuid [multiple allowed]
-    #[argh(option)]
-    device: Vec<String>,
-
-    /// filter service uuid [multiple allowed]
-    #[argh(option)]
-    service: Vec<String>,
-
-    /// filter characteristic uuid [multiple allowed]
-    #[argh(option)]
-    characteristic: Vec<String>,
-
-    /// minimum RSSI
-    #[argh(option)]
-    rssi: Option<i16>,
-
-    /// timeout
-    #[argh(option)]
-    timeout: Option<u64>,
-
-    /// decode format <characteristic_uuid::type>
-    #[argh(option)]
-    decode: Vec<String>,
-
-    /// NDJSON output
-    #[argh(switch)]
-    json: bool,
-}
-
-#[derive(FromArgs, Debug)]
-/// Write characteristic data
-#[argh(subcommand, name = "write")]
-struct WriteArgs {
-    /// device name
-    #[argh(option)]
-    name: Vec<String>,
-
-    /// device uuid
-    #[argh(option)]
-    device: Vec<String>,
-
-    /// service uuid
-    #[argh(option)]
-    service: Vec<String>,
-
-    /// write characteristic - format: characteristic_uuid::data[_type]
-    #[argh(option)]
-    write: Vec<String>,
-
-    /// minimum RSSI
-    #[argh(option)]
-    rssi: Option<i16>,
-
-    /// scan timeout
-    #[argh(option)]
-    timeout: Option<u64>,
-
-    /// force write without response
-    #[argh(switch)]
-    without_response: bool,
-
-    /// NDJSON output
-    #[argh(switch)]
-    json: bool,
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

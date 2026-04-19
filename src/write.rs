@@ -5,6 +5,7 @@ use btleplug::api::{
 use btleplug::platform::Adapter;
 use btleplug::platform::Peripheral;
 use futures::StreamExt;
+use regex::Regex;
 use tokio::time::timeout;
 use uuid::Uuid;
 
@@ -14,7 +15,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use crate::WRITE_TIMEOUT;
-use crate::WriteArgs;
+use crate::commands::WriteArgs;
 use crate::filter::{device_match, filter};
 use crate::types::DeviceInfo;
 use crate::util::{parse_uuid, parse_write, uuid_filter};
@@ -23,6 +24,7 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
     let service_filter = uuid_filter(&args.service)?;
     let write_map = parse_write(&args.write)?;
     let characteristic_filter = Arc::new(write_map.keys().cloned().collect::<HashSet<Uuid>>());
+    let name_filter = args.name.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>()?;
     let n_write = Arc::new(AtomicU32::new(write_map.len() as u32));
 
     // Validate device uuids
@@ -54,7 +56,7 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                             // Get basic info first (fast)
                             let device = DeviceInfo::new(&peripheral).await?;
 
-                            if !device_match(&device, &args.rssi, &args.name, &args.device) {
+                            if !device_match(&device, &args.rssi, &name_filter, &args.device) {
                                 continue;
                             }
 

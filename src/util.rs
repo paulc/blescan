@@ -5,7 +5,7 @@ use uuid::Uuid;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::char_data::{CharData, CharFormat};
+use crate::characteristic_data::{CharData, CharFormat};
 
 pub fn format_properties(props: &CharPropFlags) -> String {
     let mut p = Vec::new();

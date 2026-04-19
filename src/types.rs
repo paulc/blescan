@@ -8,7 +8,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 
-use crate::char_data::CharFormat;
+use crate::characteristic_data::CharFormat;
 use crate::util::format_properties;
 use crate::{CHARACTERISTIC_MAP, DESCRIPTOR_MAP, SERVICE_MAP};
 

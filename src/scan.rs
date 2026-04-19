@@ -2,15 +2,18 @@ use anyhow::anyhow;
 use btleplug::api::{Central, CentralEvent, ScanFilter};
 use btleplug::platform::Adapter;
 use futures::StreamExt;
+use regex::Regex;
 use std::time::Duration;
 use tokio::time::timeout;
 
 use std::collections::HashSet;
 
-use crate::ScanArgs;
+use crate::commands::ScanArgs;
 use crate::types::DeviceInfo;
 
 pub async fn run(central: Adapter, args: ScanArgs) -> anyhow::Result<()> {
+    let name_filter = args.name.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>()?;
+
     // ScanFilter only checks for services in the Advertisement
     // payload which tend to be very limited (31 bytes max) rather
     // then the full list of GATT services (which need connection)
@@ -38,7 +41,7 @@ pub async fn run(central: Adapter, args: ScanArgs) -> anyhow::Result<()> {
                                 }
                             }
                             // Filter by name
-                            if !args.name.is_empty() && !args.name.contains(&device.name) {
+                            if !name_filter.is_empty() && !name_filter.iter().any(|r| r.is_match(&device.name)) {
                                 continue;
                             }
                             if args.json {

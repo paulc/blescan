@@ -1,5 +1,6 @@
 use btleplug::api::{Characteristic, Peripheral as _, Service};
 use btleplug::platform::Peripheral;
+use regex::Regex;
 use std::time::Duration;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -13,11 +14,11 @@ use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
 pub fn device_match(
     device: &DeviceInfo,
     rssi_filter: &Option<i16>,
-    name_filter: &Vec<String>,
+    name_filter: &Vec<Regex>,
     id_filter: &Vec<String>,
 ) -> bool {
     rssi_filter.is_none_or(|rssi| device.rssi > rssi)
-        && (name_filter.is_empty() || name_filter.iter().any(|n| device.name == *n))
+        && (name_filter.is_empty() || name_filter.iter().any(|r| r.is_match(&device.name)))
         && (id_filter.is_empty() || id_filter.iter().any(|id| device.id == *id))
 }
 
