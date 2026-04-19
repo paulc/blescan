@@ -35,20 +35,20 @@ pub fn format_properties(props: &CharPropFlags) -> String {
 
 pub fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
     if s.len() == 4 {
-        // 8-bit UUID
+        // 16-bit UUID
         let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
         uuid::Uuid::parse_str(&full)
     } else if s.len() == 6 && s.starts_with("0x") {
-        // 8-bit UUID (0x prexfix)
+        // 16-bit UUID (0x prexfix)
         let s = &s[2..];
         let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
         uuid::Uuid::parse_str(&full)
     } else if s.len() == 8 {
-        // 16-bit UUID
+        // 32-bit UUID
         let full = format!("{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
         uuid::Uuid::parse_str(&full)
     } else if s.len() == 10 && s.starts_with("0x") {
-        // 16-bit UUID (0x prefix)
+        // 32-bit UUID (0x prefix)
         let s = &s[2..];
         let full = format!("{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
         uuid::Uuid::parse_str(&full)

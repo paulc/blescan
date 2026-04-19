@@ -52,7 +52,7 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                         Ok(peripheral) => {
                             // Get basic info first (fast)
                             let device = DeviceInfo::new(&peripheral).await?;
-                            //
+
                             if !device_match(&device, &args.rssi, &name_filter, &args.device) {
                                 continue;
                             }
@@ -62,7 +62,7 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
 
                             // Define filter callbacks
 
-                            // Standard match callback - add matching characteristics to devivce
+                            // Standard match callback - add matching characteristics to device
                             let match_callback = {
                                 let device = Arc::clone(&device);
                                 let decode_map = Arc::clone(&decode_map);

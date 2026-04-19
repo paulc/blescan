@@ -25,6 +25,10 @@ pub struct ScanArgs {
     #[argh(option)]
     pub name: Vec<String>,
 
+    /// filter device uuid [multiple allowed]
+    #[argh(option)]
+    pub device: Vec<String>,
+
     /// minimum RSSI
     #[argh(option)]
     pub rssi: Option<i16>,
@@ -89,7 +93,7 @@ pub struct EnumerateArgs {
 #[argh(subcommand, name = "poll")]
 pub struct PollArgs {
     /// read service data continuously (poll interval in s)
-    #[argh(option, default = "f64::from(5)")]
+    #[argh(option, default = "5.0")]
     pub interval: f64,
 
     /// filter device name [multiple allowed]

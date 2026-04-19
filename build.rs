@@ -21,6 +21,7 @@ fn main() {
     // Re-run if the YAML file changes
     println!("cargo:rerun-if-changed=data/service_uuids.yaml");
     println!("cargo:rerun-if-changed=data/characteristic_uuids.yaml");
+    println!("cargo:rerun-if-changed=data/descriptor_uuids.yaml");
 
     let mut map = String::new();
 
@@ -76,7 +77,7 @@ static CHARACTERISTIC_MAP: std::sync::LazyLock<std::collections::HashMap<uuid::U
 
     // Generate BLE descriptor map
     let descriptor_yaml =
-        fs::read_to_string("data/descriptor_uuids.yaml").expect("Failed to read characteristic_uuids.yaml");
+        fs::read_to_string("data/descriptor_uuids.yaml").expect("Failed to read descriptor_uuids.yaml");
     let descriptor_db: UuidDatabase = serde_yaml::from_str(&descriptor_yaml).expect("Failed to parse YAML");
 
     map.push_str(

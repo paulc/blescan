@@ -50,33 +50,33 @@ impl TryFrom<&str> for CharFormat {
 }
 
 impl CharFormat {
-    pub fn decode(&self, data: &Vec<u8>) -> String {
+    pub fn decode(&self, data: &[u8]) -> String {
         match self {
-            CharFormat::U8 => TryInto::<[u8; 1]>::try_into(data.as_slice())
+            CharFormat::U8 => TryInto::<[u8; 1]>::try_into(data)
                 .map(|a| format!("{}", u8::from_le_bytes(a)))
                 .unwrap_or("<Invalid Format>".into()),
-            CharFormat::I8 => TryInto::<[u8; 1]>::try_into(data.as_slice())
+            CharFormat::I8 => TryInto::<[u8; 1]>::try_into(data)
                 .map(|a| format!("{}", i8::from_le_bytes(a)))
                 .unwrap_or("<Invalid Format>".into()),
-            CharFormat::U16 => TryInto::<[u8; 2]>::try_into(data.as_slice())
+            CharFormat::U16 => TryInto::<[u8; 2]>::try_into(data)
                 .map(|a| format!("{}", u16::from_le_bytes(a)))
                 .unwrap_or("<Invalid Format>".into()),
-            CharFormat::I16 => TryInto::<[u8; 2]>::try_into(data.as_slice())
+            CharFormat::I16 => TryInto::<[u8; 2]>::try_into(data)
                 .map(|a| format!("{}", i16::from_le_bytes(a)))
                 .unwrap_or("<Invalid Format>".into()),
-            CharFormat::U32 => TryInto::<[u8; 4]>::try_into(data.as_slice())
+            CharFormat::U32 => TryInto::<[u8; 4]>::try_into(data)
                 .map(|a| format!("{}", u32::from_le_bytes(a)))
                 .unwrap_or("<Invalid Format>".into()),
-            CharFormat::I32 => TryInto::<[u8; 4]>::try_into(data.as_slice())
+            CharFormat::I32 => TryInto::<[u8; 4]>::try_into(data)
                 .map(|a| format!("{}", i32::from_le_bytes(a)))
                 .unwrap_or("<Invalid Format>".into()),
-            CharFormat::U64 => TryInto::<[u8; 8]>::try_into(data.as_slice())
+            CharFormat::U64 => TryInto::<[u8; 8]>::try_into(data)
                 .map(|a| format!("{}", u64::from_le_bytes(a)))
                 .unwrap_or("<Invalid Format>".into()),
-            CharFormat::I64 => TryInto::<[u8; 8]>::try_into(data.as_slice())
+            CharFormat::I64 => TryInto::<[u8; 8]>::try_into(data)
                 .map(|a| format!("{}", i64::from_le_bytes(a)))
                 .unwrap_or("<Invalid Format>".into()),
-            CharFormat::Utf8 => TryInto::<String>::try_into(data.clone()).unwrap_or("<Invalid Format>".into()),
+            CharFormat::Utf8 => TryInto::<String>::try_into(data.to_vec()).unwrap_or("<Invalid Format>".into()),
         }
     }
 }
@@ -86,8 +86,8 @@ pub struct CharData(Vec<u8>);
 
 impl CharData {
     #[allow(unused)]
-    pub fn new(data: &Vec<u8>) -> Self {
-        Self(data.clone())
+    pub fn new(data: &[u8]) -> Self {
+        Self(data.to_vec())
     }
     pub fn to_vec(&self) -> &Vec<u8> {
         &self.0
@@ -108,7 +108,7 @@ macro_rules! chardata_from_int {
 }
 chardata_from_int!(i8, u8, i16, u16, i32, u32, i64, u64);
 
-/// Macro to parse typed int (with optional 0x prexix) into CharData
+/// Macro to parse typed int (with optional 0x prefix) into CharData
 macro_rules! parse_int_type {
     ($value:expr, $int_type:ty) => {{
         let v = $value.trim();

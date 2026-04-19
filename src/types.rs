@@ -88,33 +88,19 @@ impl ServiceInfo {
 
 impl std::fmt::Display for ServiceInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.characteristics.is_empty() {
-            writeln!(
-                f,
-                "    └─ Service: {} {}({} characteristics)",
-                self.uuid.to_short_string(),
-                if let Some(t) = self.service_type {
-                    format!(" [{}] ", t)
-                } else {
-                    "".to_string()
-                },
-                self.characteristics.len()
-            )?;
-        } else {
-            writeln!(
-                f,
-                "    └─ Service: {} {}({} characteristics)",
-                self.uuid.to_short_string(),
-                if let Some(t) = self.service_type {
-                    format!(" [{}] ", t)
-                } else {
-                    "".to_string()
-                },
-                self.characteristics.len()
-            )?;
-            for c in &self.characteristics {
-                write!(f, "{}", c.1)?;
-            }
+        writeln!(
+            f,
+            "    └─ Service: {} {}({} characteristics)",
+            self.uuid.to_short_string(),
+            if let Some(t) = self.service_type {
+                format!(" [{}] ", t)
+            } else {
+                "".to_string()
+            },
+            self.characteristics.len()
+        )?;
+        for c in self.characteristics.values() {
+            write!(f, "{}", c)?;
         }
         Ok(())
     }
@@ -150,7 +136,7 @@ impl CharacteristicInfo {
             descriptors: c.descriptors.iter().map(|d| DescriptorInfo::new(&d.uuid)).collect(),
         }
     }
-    pub async fn read(&mut self, p: &Peripheral, map: &HashMap<Uuid, CharFormat>) -> () {
+    pub async fn read(&mut self, p: &Peripheral, map: &HashMap<Uuid, CharFormat>) {
         if self.properties.contains(CharPropFlags::READ) {
             self.value = p.read(&self.to_characteristic()).await.ok();
             self.decoded = self

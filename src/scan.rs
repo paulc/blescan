@@ -9,6 +9,7 @@ use tokio::time::timeout;
 use std::collections::HashSet;
 
 use crate::commands::ScanArgs;
+use crate::filter::device_match;
 use crate::types::DeviceInfo;
 
 pub async fn run(central: Adapter, args: ScanArgs) -> anyhow::Result<()> {
@@ -34,16 +35,11 @@ pub async fn run(central: Adapter, args: ScanArgs) -> anyhow::Result<()> {
                         Ok(peripheral) => {
                             // Get basic info first (fast)
                             let device = DeviceInfo::new(&peripheral).await?;
-                            // Filter by RSSI
-                            if let Some(rssi) = args.rssi {
-                                if device.rssi < rssi {
-                                    continue;
-                                }
-                            }
-                            // Filter by name
-                            if !name_filter.is_empty() && !name_filter.iter().any(|r| r.is_match(&device.name)) {
+
+                            if !device_match(&device, &args.rssi, &name_filter, &args.device) {
                                 continue;
                             }
+
                             if args.json {
                                 println!("{}", serde_json::to_string(&device)?);
                             } else {
