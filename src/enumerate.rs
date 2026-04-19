@@ -92,7 +92,7 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                                         if args.json {
                                             println!("{}", serde_json::to_string(&*device)?);
                                         } else {
-                                            print!("[+] Discovered: {}", device);
+                                            print!("[+] Device: {}", device);
                                         }
                                         match_count.fetch_add(1, Ordering::Relaxed);
                                     }

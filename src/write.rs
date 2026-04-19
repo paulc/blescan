@@ -1,36 +1,42 @@
 use anyhow::{Context, anyhow};
-use btleplug::api::{Central, CentralEvent, CharPropFlags, Peripheral as _, ScanFilter, WriteType};
+use btleplug::api::{
+    Central, CentralEvent, CharPropFlags, Characteristic, Peripheral as _, ScanFilter, Service, WriteType,
+};
 use btleplug::platform::Adapter;
+use btleplug::platform::Peripheral;
 use futures::StreamExt;
-use std::time::Duration;
 use tokio::time::timeout;
+use uuid::Uuid;
 
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 
+use crate::WRITE_TIMEOUT;
 use crate::WriteArgs;
-use crate::char_data::CharData;
+use crate::filter::{device_match, filter};
 use crate::types::DeviceInfo;
-use crate::util::parse_uuid;
-use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, WRITE_TIMEOUT};
-
-static WRITE_COMPLETE: AtomicBool = AtomicBool::new(false);
+use crate::util::{parse_uuid, parse_write, uuid_filter};
 
 pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
-    // Convert args
-    let service_match = parse_uuid(&args.service).context("Error Parsing Service UUID")?;
-    let characteristic_match = parse_uuid(&args.characteristic).context("Error Parsing Characteristic UUID")?;
-    let data = CharData::try_from(args.data.as_str()).context("Error Parsing Characteristic Data")?;
+    let service_filter = uuid_filter(&args.service)?;
+    let write_map = parse_write(&args.write)?;
+    let characteristic_filter = Arc::new(write_map.keys().cloned().collect::<HashSet<Uuid>>());
+    let n_write = Arc::new(AtomicU32::new(write_map.len() as u32));
 
-    // Check args.device is a valid UUID
-    if let Some(ref device) = args.device {
-        parse_uuid(&device).context("Error Parsing Device UUID")?;
-    }
+    // Validate device uuids
+    args.device
+        .iter()
+        .map(|s| parse_uuid(s))
+        .collect::<Result<Vec<_>, _>>()
+        .context("Error Parsing Device UUID")?;
 
     // ScanFilter only checks for services in the Advertisement
     // payload which tend to be very limited (31 bytes max) rather
     // then the full list of GATT services (which need connection)
     central.start_scan(ScanFilter::default()).await?;
+
     let mut seen = HashSet::new();
 
     let scan = async {
@@ -43,123 +49,75 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                         continue;
                     }
                     seen.insert(id.clone());
-
                     match central.peripheral(&id).await {
                         Ok(peripheral) => {
                             // Get basic info first (fast)
                             let device = DeviceInfo::new(&peripheral).await?;
-                            // Filter by RSSI
-                            if let Some(rssi) = args.rssi {
-                                if device.rssi < rssi {
-                                    continue;
-                                }
-                            }
-                            // Filter by name
-                            if args.name.as_ref().is_some_and(|name| *name != device.name) {
+
+                            if !device_match(&device, &args.rssi, &args.name, &args.device) {
                                 continue;
                             }
 
-                            // Filter by device UUID
-                            if args.device.as_ref().is_some_and(|id| *id != device.id) {
-                                continue;
-                            }
-
-                            // Spawn enumeration in background so we don't block events
-                            let data = data.clone();
-                            tokio::spawn(async move {
-                                match timeout(Duration::from_secs(CONNECT_TIMEOUT), peripheral.connect()).await {
-                                    Ok(Ok(_)) => {
+                            let match_callback = {
+                                let write_map = Arc::clone(&write_map);
+                                let n_write = Arc::clone(&n_write);
+                                async move |peripheral: &Peripheral,
+                                            _service: &Service,
+                                            characteristic: &Characteristic|
+                                            -> anyhow::Result<()> {
+                                    if characteristic.properties.contains(CharPropFlags::WRITE)
+                                        || characteristic
+                                            .properties
+                                            .contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
+                                    {
                                         match timeout(
-                                            Duration::from_secs(ENUMERATE_TIMEOUT),
-                                            peripheral.discover_services(),
+                                            Duration::from_secs(WRITE_TIMEOUT),
+                                            peripheral.write(
+                                                characteristic,
+                                                write_map.get(&characteristic.uuid).context(format!(
+                                                    "Write data not found: {}",
+                                                    characteristic.uuid
+                                                ))?,
+                                                if characteristic
+                                                    .properties
+                                                    .contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
+                                                    || args.without_response
+                                                {
+                                                    WriteType::WithoutResponse
+                                                } else {
+                                                    WriteType::WithResponse
+                                                },
+                                            ),
                                         )
                                         .await
                                         {
-                                            Ok(Ok(_)) => {
-                                                'services: for service in peripheral.services() {
-                                                    if service.uuid == service_match {
-                                                        for characteristic in &service.characteristics {
-                                                            if characteristic.uuid == characteristic_match {
-                                                                if characteristic
-                                                                    .properties
-                                                                    .contains(CharPropFlags::WRITE)
-                                                                {
-                                                                    match timeout(
-                                                                        Duration::from_secs(WRITE_TIMEOUT),
-                                                                        peripheral.write(
-                                                                            characteristic,
-                                                                            data.to_vec(),
-                                                                            if args.without_response {
-                                                                                WriteType::WithoutResponse
-                                                                            } else {
-                                                                                WriteType::WithResponse
-                                                                            },
-                                                                        ),
-                                                                    )
-                                                                    .await
-                                                                    {
-                                                                        Ok(Ok(_)) => eprintln!(
-                                                                            "Write Successful: {}",
-                                                                            characteristic.uuid
-                                                                        ),
-                                                                        Ok(Err(e)) => eprintln!(
-                                                                            "Write Error: {} -> {}",
-                                                                            characteristic.uuid, e
-                                                                        ),
-                                                                        Err(_) => eprintln!(
-                                                                            "Write Timeout: {}",
-                                                                            characteristic.uuid
-                                                                        ),
-                                                                    }
-                                                                } else if characteristic
-                                                                    .properties
-                                                                    .contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
-                                                                {
-                                                                    match peripheral
-                                                                        .write(
-                                                                            characteristic,
-                                                                            data.to_vec(),
-                                                                            WriteType::WithoutResponse,
-                                                                        )
-                                                                        .await
-                                                                    {
-                                                                        Ok(_) => eprintln!(
-                                                                            "Write Successful: {}",
-                                                                            characteristic.uuid
-                                                                        ),
-                                                                        Err(e) => eprintln!(
-                                                                            "Write Error: {} -> {}",
-                                                                            characteristic.uuid, e
-                                                                        ),
-                                                                    }
-                                                                } else {
-                                                                    eprintln!(
-                                                                        "ERROR: Characteristic {} not writeable",
-                                                                        characteristic.uuid
-                                                                    );
-                                                                }
-                                                                WRITE_COMPLETE.store(true, Ordering::Relaxed);
-                                                                break 'services;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            _ => {
-                                                eprintln!("Service discovery failed/timeout for {}", peripheral.id())
-                                            }
+                                            Ok(Ok(_)) => eprintln!("Write Successful: {}", characteristic.uuid),
+                                            Ok(Err(e)) => eprintln!("Write Error: {} -> {}", characteristic.uuid, e),
+                                            Err(_) => eprintln!("Write Timeout: {}", characteristic.uuid),
                                         }
-                                        if let Err(e) =
-                                            timeout(Duration::from_secs(DISCONNECT_TIMEOUT), peripheral.disconnect())
-                                                .await
-                                        {
-                                            eprintln!("Disconnect timeout/error for {}: {:?}", peripheral.id(), e);
-                                        }
+                                        n_write.fetch_sub(1, Ordering::Relaxed);
                                     }
-                                    _ => {
-                                        eprintln!("Connect timeout/error for {}", peripheral.id())
-                                    }
+                                    Ok(())
                                 }
+                            };
+
+                            let completed_callback =
+                                { async move |_peripheral: &Peripheral| -> anyhow::Result<()> { Ok(()) } };
+
+                            // Spawn enumeration in background so we don't block events
+                            let service_filter = Arc::clone(&service_filter);
+                            let characteristic_filter = Arc::clone(&characteristic_filter);
+
+                            tokio::spawn(async move {
+                                filter(
+                                    &peripheral,
+                                    &service_filter,
+                                    &characteristic_filter,
+                                    match_callback,
+                                    completed_callback,
+                                )
+                                .await?;
+                                Ok::<(), anyhow::Error>(())
                             });
                         }
                         Err(e) => {
@@ -171,17 +129,11 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                     // eprintln!(">> EVENT: {:?}", event);
                 }
             }
-            if WRITE_COMPLETE.load(Ordering::Relaxed) {
+            if n_write.load(Ordering::Relaxed) == 0 {
                 break;
             }
         }
-
-        // Check that we wrote the data
-        if WRITE_COMPLETE.load(Ordering::Relaxed) {
-            Ok::<(), anyhow::Error>(())
-        } else {
-            anyhow::bail!("Error writing BLE data")
-        }
+        Ok::<(), anyhow::Error>(())
     };
 
     if let Some(t) = args.timeout {

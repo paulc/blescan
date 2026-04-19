@@ -96,7 +96,7 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
                                             if args.json {
                                                 println!("{}", serde_json::to_string(&*device)?);
                                             } else {
-                                                print!("[+] Discovered: {}", device);
+                                                print!("[+] Device: {}", device);
                                             }
                                         }
                                     }

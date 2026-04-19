@@ -5,7 +5,7 @@ use uuid::Uuid;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::char_data::CharFormat;
+use crate::char_data::{CharData, CharFormat};
 
 pub fn format_properties(props: &CharPropFlags) -> String {
     let mut p = Vec::new();
@@ -80,5 +80,21 @@ pub fn parse_decoder(decoders: &Vec<String>) -> anyhow::Result<Arc<HashMap<Uuid,
             })
             .collect::<Result<HashMap<_, _>, _>>()
             .context("Error Parsing Decode Mapping")?,
+    ))
+}
+
+pub fn parse_write(characteristics: &Vec<String>) -> anyhow::Result<Arc<HashMap<Uuid, Vec<u8>>>> {
+    Ok(Arc::new(
+        characteristics
+            .iter()
+            .map(|s| {
+                s.split_once("::").context("Invalid Format").and_then(|(uuid, data)| {
+                    let uuid = parse_uuid(uuid)?;
+                    let data = CharData::try_from(data)?.to_vec().clone();
+                    Ok((uuid, data))
+                })
+            })
+            .collect::<Result<HashMap<_, _>, _>>()
+            .context("Error Parsing Write Data")?,
     ))
 }

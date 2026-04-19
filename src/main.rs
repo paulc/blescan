@@ -94,7 +94,7 @@ struct EnumerateArgs {
     #[argh(option)]
     timeout: Option<u64>,
 
-    /// decode format <characteristic_uuid::fmt>
+    /// decode format <characteristic_uuid::type>
     #[argh(option)]
     decode: Vec<String>,
 
@@ -140,7 +140,7 @@ struct PollArgs {
     #[argh(option)]
     timeout: Option<u64>,
 
-    /// decode format <characteristic_uuid::fmt>
+    /// decode format <characteristic_uuid::type>
     #[argh(option)]
     decode: Vec<String>,
 
@@ -177,7 +177,7 @@ struct NotifyArgs {
     #[argh(option)]
     timeout: Option<u64>,
 
-    /// decode format <characteristic_uuid::fmt>
+    /// decode format <characteristic_uuid::type>
     #[argh(option)]
     decode: Vec<String>,
 
@@ -192,23 +192,19 @@ struct NotifyArgs {
 struct WriteArgs {
     /// device name
     #[argh(option)]
-    name: Option<String>,
+    name: Vec<String>,
 
     /// device uuid
     #[argh(option)]
-    device: Option<String>,
+    device: Vec<String>,
 
     /// service uuid
     #[argh(option)]
-    service: String,
+    service: Vec<String>,
 
-    /// characteristic uuid
+    /// write characteristic - format: characteristic_uuid::data[_type]
     #[argh(option)]
-    characteristic: String,
-
-    /// data (hex)
-    #[argh(option)]
-    data: String,
+    write: Vec<String>,
 
     /// minimum RSSI
     #[argh(option)]

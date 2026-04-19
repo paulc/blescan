@@ -1,4 +1,6 @@
-use btleplug::api::{CharPropFlags, Characteristic, Peripheral as _, PeripheralProperties, Service, bleuuid::BleUuid};
+use btleplug::api::{
+    CharPropFlags, Characteristic, Descriptor, Peripheral as _, PeripheralProperties, Service, bleuuid::BleUuid,
+};
 use btleplug::platform::Peripheral;
 
 use hex;
@@ -8,7 +10,7 @@ use uuid::Uuid;
 
 use crate::char_data::CharFormat;
 use crate::util::format_properties;
-use crate::{CHARACTERISTIC_MAP, SERVICE_MAP};
+use crate::{CHARACTERISTIC_MAP, DESCRIPTOR_MAP, SERVICE_MAP};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
@@ -87,12 +89,22 @@ impl ServiceInfo {
 impl std::fmt::Display for ServiceInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.characteristics.is_empty() {
-            writeln!(f, "    Service: {}", self.uuid.to_short_string(),)?;
+            writeln!(
+                f,
+                "    └─ Service: {} {}({} characteristics)",
+                self.uuid.to_short_string(),
+                if let Some(t) = self.service_type {
+                    format!(" [{}] ", t)
+                } else {
+                    "".to_string()
+                },
+                self.characteristics.len()
+            )?;
         } else {
             writeln!(
                 f,
-                "    Service: {} {}({} characteristics)",
-                self.uuid,
+                "    └─ Service: {} {}({} characteristics)",
+                self.uuid.to_short_string(),
                 if let Some(t) = self.service_type {
                     format!(" [{}] ", t)
                 } else {
@@ -117,12 +129,13 @@ pub struct CharacteristicInfo {
     pub properties: CharPropFlags,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(skip_deserializing)]
-    pub char_type: Option<&'static str>,
+    pub characteristic_type: Option<&'static str>,
     #[serde(serialize_with = "serialize_hex_option", deserialize_with = "deserialize_hex_option")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decoded: Option<String>,
+    pub descriptors: Vec<DescriptorInfo>,
 }
 
 impl CharacteristicInfo {
@@ -131,17 +144,10 @@ impl CharacteristicInfo {
             uuid: c.uuid.clone(),
             service_uuid: c.service_uuid.clone(),
             properties: c.properties.clone(),
-            char_type: CHARACTERISTIC_MAP.get(&c.uuid).map(|v| &**v),
+            characteristic_type: CHARACTERISTIC_MAP.get(&c.uuid).map(|v| &**v),
             value: None,
             decoded: None,
-        }
-    }
-    pub fn to_characteristic(&self) -> Characteristic {
-        Characteristic {
-            uuid: self.uuid.clone(),
-            service_uuid: self.service_uuid.clone(),
-            properties: self.properties.clone(),
-            descriptors: BTreeSet::new(),
+            descriptors: c.descriptors.iter().map(|d| DescriptorInfo::new(&d.uuid)).collect(),
         }
     }
     pub async fn read(&mut self, p: &Peripheral, map: &HashMap<Uuid, CharFormat>) -> () {
@@ -153,24 +159,78 @@ impl CharacteristicInfo {
                 .and_then(|v| map.get(&self.uuid).map(|fmt| fmt.decode(v)));
         }
     }
+    fn to_characteristic(&self) -> Characteristic {
+        Characteristic {
+            uuid: self.uuid.clone(),
+            service_uuid: self.service_uuid.clone(),
+            properties: self.properties.clone(),
+            descriptors: self
+                .descriptors
+                .iter()
+                .map(|d| Descriptor {
+                    uuid: d.uuid.clone(),
+                    service_uuid: self.service_uuid.clone(),
+                    characteristic_uuid: self.uuid.clone(),
+                })
+                .collect::<BTreeSet<_>>(),
+        }
+    }
 }
 
 impl std::fmt::Display for CharacteristicInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
-            "    └─ Characteristic: {} {}",
+            "       └─ Characteristic: {} {}",
             self.uuid.to_short_string(),
             format_properties(&self.properties)
         )?;
-        if let Some(t) = self.char_type {
-            writeln!(f, "       Type: {}", t)?;
+        if !self.descriptors.is_empty() {
+            writeln!(
+                f,
+                "          Descriptors: {}",
+                self.descriptors
+                    .iter()
+                    .map(|d| d.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",".into())
+            )?;
+        }
+        if let Some(t) = self.characteristic_type {
+            writeln!(f, "          Type: {}", t)?;
         }
         if let Some(ref value) = self.value {
-            writeln!(f, "       Value: 0x{}", hex::encode(value))?;
+            writeln!(f, "          Value: 0x{}", hex::encode(value))?;
         }
         if let Some(ref decoded) = self.decoded {
-            writeln!(f, "       Decoded: {}", decoded)?;
+            writeln!(f, "          Decoded: {}", decoded)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DescriptorInfo {
+    pub uuid: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_deserializing)]
+    pub descriptor_type: Option<&'static str>,
+}
+
+impl DescriptorInfo {
+    pub fn new(uuid: &Uuid) -> Self {
+        Self {
+            uuid: uuid.clone(),
+            descriptor_type: DESCRIPTOR_MAP.get(uuid).map(|v| &**v),
+        }
+    }
+}
+impl std::fmt::Display for DescriptorInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(t) = self.descriptor_type {
+            write!(f, "{} [{}]", self.uuid.to_short_string(), t)?;
+        } else {
+            write!(f, "{}", self.uuid.to_short_string())?;
         }
         Ok(())
     }

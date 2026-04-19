@@ -7,8 +7,8 @@ use tokio::time::timeout;
 
 use std::collections::HashSet;
 
-use crate::types::DeviceInfo;
 use crate::ScanArgs;
+use crate::types::DeviceInfo;
 
 pub async fn run(central: Adapter, args: ScanArgs) -> anyhow::Result<()> {
     // ScanFilter only checks for services in the Advertisement
@@ -44,7 +44,7 @@ pub async fn run(central: Adapter, args: ScanArgs) -> anyhow::Result<()> {
                             if args.json {
                                 println!("{}", serde_json::to_string(&device)?);
                             } else {
-                                print!("[+] Discovered: {}", device);
+                                print!("[+] Device: {}", device);
                             }
                         }
                         Err(e) => {
