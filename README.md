@@ -201,3 +201,12 @@ Filter dump by event type:
 ```
 blescan dump --device 464694e8-0a01-005b-95b2-0ae54239625e --event DeviceDiscovered --event ManufacturerDataAdvertisement 
 ```
+
+## Building
+
+```
+cargo build --release
+```
+
+Executable is `target/release/blescan`
+
