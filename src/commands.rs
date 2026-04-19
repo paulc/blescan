@@ -15,6 +15,7 @@ pub enum Commands {
     Poll(PollArgs),
     Write(WriteArgs),
     Notify(NotifyArgs),
+    Dump(DumpArgs),
 }
 
 #[derive(FromArgs, Debug)]
@@ -182,7 +183,10 @@ pub struct WriteArgs {
     #[argh(option)]
     pub service: Vec<String>,
 
-    /// write characteristic - format: characteristic_uuid::data[_type]
+    /// write characteristic - characteristic_uuid::data[_type]
+    /// (will exit after all characteristics are written - in case of multiple
+    /// matching devices this may cause unexpected results. Use the --name/
+    /// --device/--service filters to limit device matches)
     #[argh(option)]
     pub write: Vec<String>,
 
@@ -197,6 +201,27 @@ pub struct WriteArgs {
     /// force write without response
     #[argh(switch)]
     pub without_response: bool,
+
+    /// NDJSON output
+    #[argh(switch)]
+    pub json: bool,
+}
+
+#[derive(FromArgs, Debug)]
+/// Dump raw BLE advertisement data
+#[argh(subcommand, name = "dump")]
+pub struct DumpArgs {
+    /// filter event type [multiple allowed]
+    #[argh(option)]
+    pub event: Vec<String>,
+
+    /// filter device uuid [multiple allowed]
+    #[argh(option)]
+    pub device: Vec<String>,
+
+    /// scan timeout
+    #[argh(option)]
+    pub timeout: Option<u64>,
 
     /// NDJSON output
     #[argh(switch)]

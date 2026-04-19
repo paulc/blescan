@@ -17,7 +17,7 @@ pub fn device_match(
     name_filter: &Vec<Regex>,
     id_filter: &Vec<String>,
 ) -> bool {
-    rssi_filter.is_none_or(|rssi| device.rssi > rssi)
+    rssi_filter.is_none_or(|rssi| device.rssi >= rssi)
         && (name_filter.is_empty() || name_filter.iter().any(|r| r.is_match(&device.name)))
         && (id_filter.is_empty() || id_filter.iter().any(|id| device.id == *id))
 }

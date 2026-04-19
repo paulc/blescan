@@ -4,6 +4,7 @@ use btleplug::platform::Manager;
 
 mod characteristic_data;
 mod commands;
+mod dump;
 mod enumerate;
 mod filter;
 mod notify;
@@ -44,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Poll(args) => poll::run(central, args).await?,
         Commands::Notify(args) => notify::run(central, args).await?,
         Commands::Write(args) => write::run(central, args).await?,
+        Commands::Dump(args) => dump::run(central, args).await?,
     }
 
     Ok(())
