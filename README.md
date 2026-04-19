@@ -25,7 +25,7 @@ All discovery commands support:
 - `--rssi <dbm>` - Minimum signal strength
 - `--timeout <secs>` - Scan duration
 
-(Note that UUIDs can be specified as full or appreviated UUIDs - eg: `0x2a24` = `00002a24-0000-1000-8000-00805f9b34fb`)
+(Note that UUIDs can be specified as full abbreviated BLE UUIDs - eg: `0x2a24` = `00002a24-0000-1000-8000-00805f9b34fb`)
 
 ## Dump Event Filters
 
