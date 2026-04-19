@@ -37,6 +37,113 @@ The `dump` command supports filtering by event type and device id:
 - `--event ServiceDataAdvertisement`
 - etc.
 
+## Usage
+
+```
+Usage: blescan scan [--name <name...>] [--device <device...>] [--rssi <rssi>] [--timeout <timeout>] [--json]
+
+Scan BLE Devices
+
+Options:
+  --name            filter device name [multiple allowed]
+  --device          filter device uuid [multiple allowed]
+  --rssi            minimum RSSI
+  --timeout         scan timeout
+  --json            NDJSON output
+  --help, help      display usage information
+
+```
+
+```
+Usage: blescan enumerate [--read] [--name <name...>] [--device <device...>] [--service <service...>] [--characteristic <characteristic...>] [--rssi <rssi>] [--timeout <timeout>] [--decode <decode...>] [--json] [--max <max>]
+
+Enumerate BLE Devices
+
+Options:
+  --read            read characteristic data
+  --name            filter device name [multiple allowed]
+  --device          filter device uuid [multiple allowed]
+  --service         filter service uuid [multiple allowed]
+  --characteristic  filter characteristic uuid [multiple allowed]
+  --rssi            minimum RSSI
+  --timeout         scan timeout
+  --decode          decode format <characteristic_uuid::type>
+  --json            NDJSON output
+  --max             max number of device matches (note: may be exceeded if
+                    multiple matching tasks running in parallel)
+  --help, help      display usage information
+```
+
+```
+Usage: blescan poll [--interval <interval>] [--name <name...>] [--device <device...>] [--service <service...>] [--characteristic <characteristic...>] [--rssi <rssi>] [--timeout <timeout>] [--decode <decode...>] [--json]
+
+Read service data continuously
+
+Options:
+  --interval        read service data continuously (poll interval in s)
+  --name            filter device name [multiple allowed]
+  --device          filter device uuid [multiple allowed]
+  --service         filter service uuid [multiple allowed]
+  --characteristic  filter characteristic uuid [multiple allowed]
+  --rssi            minimum RSSI
+  --timeout         timeout
+  --decode          decode format <characteristic_uuid::type>
+  --json            NDJSON output
+  --help, help      display usage information
+```
+
+```
+Usage: blescan notify [--name <name...>] [--device <device...>] [--service <service...>] [--characteristic <characteristic...>] [--rssi <rssi>] [--timeout <timeout>] [--decode <decode...>] [--json]
+
+Subscribe/listen for notify events
+
+Options:
+  --name            filter device name [multiple allowed]
+  --device          filter device uuid [multiple allowed]
+  --service         filter service uuid [multiple allowed]
+  --characteristic  filter characteristic uuid [multiple allowed]
+  --rssi            minimum RSSI
+  --timeout         timeout
+  --decode          decode format <characteristic_uuid::type>
+  --json            NDJSON output
+  --help, help      display usage information
+```
+
+```
+Usage: blescan write [--name <name...>] [--device <device...>] [--service <service...>] [--write <write...>] [--rssi <rssi>] [--timeout <timeout>] [--without-response] [--json]
+
+Write characteristic data
+
+Options:
+  --name            device name
+  --device          device uuid
+  --service         service uuid
+  --write           write characteristic - characteristic_uuid::data[_type]
+                    (will exit after all characteristics are written - in case
+                    of multiple matching devices this may cause unexpected
+                    results. Use the --name/ --device/--service filters to limit
+                    device matches)
+  --rssi            minimum RSSI
+  --timeout         scan timeout
+  --without-response
+                    force write without response
+  --json            NDJSON output
+  --help, help      display usage information
+```
+
+```
+Usage: blescan dump [--event <event...>] [--device <device...>] [--timeout <timeout>] [--json]
+
+Dump raw BLE advertisement data
+
+Options:
+  --event           filter event type [multiple allowed]
+  --device          filter device uuid [multiple allowed]
+  --timeout         scan timeout
+  --json            NDJSON output
+  --help, help      display usage information
+```
+
 ## Examples
 
 Scan for devices:
