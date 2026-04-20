@@ -45,7 +45,6 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
 
     let scan = async {
         let mut events = central.events().await?;
-        // while let Some(event) = events.next().await {
         loop {
             tokio::select! {
                     _ = rx.recv() => {
