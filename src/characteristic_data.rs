@@ -125,7 +125,7 @@ macro_rules! parse_int_type {
 impl TryFrom<&str> for CharData {
     type Error = CharDataError;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value.split_once("_") {
+        match value.rsplit_once("_") {
             Some((v, "bool")) => match v.to_lowercase().as_str() {
                 "true" => Ok(CharData(vec![1_u8])),
                 "false" => Ok(CharData(vec![0_u8])),

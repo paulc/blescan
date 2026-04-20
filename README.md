@@ -210,12 +210,12 @@ blescan notify --name "HeartRate" --service 0x180d
 
 Write hex data:
 ```
-blescan write --name "LED" --write "0x2a56::ff00"
+blescan write --name "LED" --characteristic "0x2a56::ff00"
 ```
 
 Write with type suffix:
 ```
-blescan write --name "Config" --write "0x2a57::100_u16"
+blescan write --name "Config" --characteristic "0x2a57::100_u16"
 ```
 
 Decode values during read:

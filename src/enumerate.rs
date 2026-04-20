@@ -79,7 +79,9 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                                     let mut device = device.lock().await;
                                     let mut c = CharacteristicInfo::new(&characteristic);
                                     if args.read {
-                                        c.read(peripheral, &decode_map).await;
+                                        if let Err(_) = c.read(peripheral, &decode_map).await {
+                                            eprintln!("Error reading characteristic data: {}", characteristic.uuid);
+                                        }
                                     }
                                     device
                                         .services

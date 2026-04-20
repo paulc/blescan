@@ -137,14 +137,15 @@ impl CharacteristicInfo {
             descriptors: c.descriptors.iter().map(|d| DescriptorInfo::new(&d.uuid)).collect(),
         }
     }
-    pub async fn read(&mut self, p: &Peripheral, decode_map: &HashMap<Uuid, CharFormat>) {
+    pub async fn read(&mut self, p: &Peripheral, decode_map: &HashMap<Uuid, CharFormat>) -> anyhow::Result<()> {
         if self.properties.contains(CharPropFlags::READ) {
-            self.value = p.read(&self.to_characteristic()).await.ok();
+            self.value = Some(p.read(&self.to_characteristic()).await?);
             self.decoded = self
                 .value
                 .as_ref()
                 .and_then(|v| decode_map.get(&self.uuid).and_then(|fmt| fmt.decode_value(v).ok()))
         }
+        Ok(())
     }
     fn to_characteristic(&self) -> Characteristic {
         Characteristic {
@@ -261,7 +262,7 @@ fn serialize_hex<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    serializer.serialize_str(&format!("0x{}", hex::encode(bytes)))
+    serializer.serialize_str(&format!("{}", hex::encode(bytes)))
 }
 
 fn deserialize_hex<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -286,7 +287,7 @@ where
 {
     match bytes {
         Some(v) => {
-            let hex = format!("0x{}", hex::encode(v));
+            let hex = format!("{}", hex::encode(v));
             serializer.serialize_str(&hex)
         }
         None => serializer.serialize_none(),

@@ -86,8 +86,11 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
                                 let device = Arc::clone(&device);
                                 let decode_map = Arc::clone(&decode_map);
                                 async move |peripheral: &Peripheral| -> anyhow::Result<()> {
-                                    let mut device = device.lock().await;
-                                    if !device.services.is_empty() {
+                                    let poll_device = {
+                                        let device = device.lock().await;
+                                        !device.services.is_empty()
+                                    };
+                                    if poll_device {
                                         let mut ticker = tokio::time::interval(Duration::from_millis(
                                             (args.interval * 1000.0) as u64,
                                         ));
@@ -95,16 +98,26 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
                                             // First tick returns immediately
                                             ticker.tick().await;
                                             // Update device data
-                                            device.update_rssi(peripheral).await;
-                                            for service in device.services.values_mut() {
-                                                for characteristic in service.characteristics.values_mut() {
-                                                    characteristic.read(peripheral, &decode_map).await;
+                                            {
+                                                let mut device = device.lock().await;
+                                                device.update_rssi(peripheral).await;
+                                                for service in device.services.values_mut() {
+                                                    for characteristic in service.characteristics.values_mut() {
+                                                        if let Err(_) =
+                                                            characteristic.read(peripheral, &decode_map).await
+                                                        {
+                                                            eprintln!(
+                                                                "Error reading characteristic data: {}",
+                                                                characteristic.uuid
+                                                            );
+                                                        }
+                                                    }
                                                 }
-                                            }
-                                            if args.json {
-                                                println!("{}", serde_json::to_string(&*device)?);
-                                            } else {
-                                                print!("[+] Device: {}", device);
+                                                if args.json {
+                                                    println!("{}", serde_json::to_string(&*device)?);
+                                                } else {
+                                                    print!("[+] Device: {}", device);
+                                                }
                                             }
                                         }
                                     }

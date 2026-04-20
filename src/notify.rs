@@ -70,7 +70,9 @@ pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
                                             service: &Service,
                                             characteristic: &Characteristic|
                                             -> anyhow::Result<()> {
-                                    if characteristic.properties.contains(CharPropFlags::NOTIFY) {
+                                    if characteristic.properties.contains(CharPropFlags::NOTIFY)
+                                        || characteristic.properties.contains(CharPropFlags::INDICATE)
+                                    {
                                         peripheral.subscribe(&characteristic).await?;
                                         if !json {
                                             eprintln!(
