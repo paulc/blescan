@@ -22,7 +22,7 @@ use crate::util::{parse_uuid, parse_write, uuid_filter};
 
 pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
     let service_filter = uuid_filter(&args.service)?;
-    let write_map = parse_write(&args.write)?;
+    let write_map = parse_write(&args.characteristic)?;
     let characteristic_filter = Arc::new(write_map.keys().cloned().collect::<HashSet<Uuid>>());
     let name_filter = args.name.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>()?;
     let n_write = Arc::new(AtomicU32::new(write_map.len() as u32));

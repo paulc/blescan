@@ -25,7 +25,12 @@ All discovery commands support:
 - `--rssi <dbm>` - Minimum signal strength
 - `--timeout <secs>` - Scan duration
 
-(Note that UUIDs can be specified as full abbreviated BLE UUIDs - eg: `0x2a24` = `00002a24-0000-1000-8000-00805f9b34fb`)
+Name, Device UUID and RSSI filtering are performed on the advertisment data (so are
+fast), service/characteristic filters are applied after connection/enumeration.
+Note that the Device UUID is arbitrary (at least on MacOS).
+
+(Note that UUIDs can be specified as full or abbreviated BLE UUIDs - eg: `0x2a24`
+= `00002a24-0000-1000-8000-00805f9b34fb`)
 
 ## Dump Event Filters
 
@@ -37,6 +42,24 @@ The `dump` command supports filtering by event type and device id:
 - `--event ManufacturerDataAdvertisement`
 - `--event ServiceDataAdvertisement`
 - etc.
+
+## Decoding/Encoding
+
+Characteristic data can be decoded by specifying the data format using the
+`--decode <uuid::format>` flag (format can be: bool, utf8, f32/64, u8/16/32/64,
+i8/16/32/64). 
+
+If no format is matched then the raw hex output is shown.
+
+Multiple `--decode` flags can be provided, for large numbers of definitions
+one or more files containing line separated decode definitions can be specified
+using `--decode-file <file>` (blank and comment lines allowed).
+
+Characteristic data can be encoded for the `write` command using the format
+`--characteristic <uuid::data[_format]>`.
+
+If format is specified (same formats as decode) then the data is encoded 
+using this format, if no format is specified data is assumed to be hex bytes.
 
 ## Usage
 
@@ -56,7 +79,7 @@ Options:
 ```
 
 ```
-Usage: blescan enumerate [--read] [--name <name...>] [--device <device...>] [--service <service...>] [--characteristic <characteristic...>] [--rssi <rssi>] [--timeout <timeout>] [--decode <decode...>] [--json] [--max <max>]
+Usage: blescan enumerate [--read] [--name <name...>] [--device <device...>] [--service <service...>] [--characteristic <characteristic...>] [--rssi <rssi>] [--timeout <timeout>] [--decode <decode...>] [--decode-file <decode-file...>] [--json] [--max <max>]
 
 Enumerate BLE Devices
 
@@ -69,14 +92,16 @@ Options:
   --rssi            minimum RSSI
   --timeout         scan timeout
   --decode          decode format <characteristic_uuid::type>
+  --decode-file     file containing decode format <characteristic_uuid::type>
   --json            NDJSON output
   --max             max number of device matches (note: may be exceeded if
                     multiple matching tasks running in parallel)
   --help, help      display usage information
+
 ```
 
 ```
-Usage: blescan poll [--interval <interval>] [--name <name...>] [--device <device...>] [--service <service...>] [--characteristic <characteristic...>] [--rssi <rssi>] [--timeout <timeout>] [--decode <decode...>] [--json]
+Usage: blescan poll [--interval <interval>] [--name <name...>] [--device <device...>] [--service <service...>] [--characteristic <characteristic...>] [--rssi <rssi>] [--timeout <timeout>] [--decode <decode...>] [--decode-file <decode-file...>] [--json]
 
 Read service data continuously
 
@@ -89,12 +114,37 @@ Options:
   --rssi            minimum RSSI
   --timeout         timeout
   --decode          decode format <characteristic_uuid::type>
+  --decode-file     file containing decode format <characteristic_uuid::type>
   --json            NDJSON output
   --help, help      display usage information
+
 ```
 
 ```
-Usage: blescan notify [--name <name...>] [--device <device...>] [--service <service...>] [--characteristic <characteristic...>] [--rssi <rssi>] [--timeout <timeout>] [--decode <decode...>] [--json]
+Usage: blescan write [--name <name...>] [--device <device...>] [--service <service...>] [--characteristic <characteristic...>] [--rssi <rssi>] [--timeout <timeout>] [--without-response] [--json]
+
+Write characteristic data
+
+Options:
+  --name            device name
+  --device          device uuid
+  --service         service uuid
+  --characteristic  write characteristic - characteristic_uuid::data[_type]
+                    (will exit after all characteristics are written - in case
+                    of multiple matching devices this may cause unexpected
+                    results. Use the --name/ --device/--service filters to limit
+                    device matches)
+  --rssi            minimum RSSI
+  --timeout         scan timeout
+  --without-response
+                    force write without response
+  --json            NDJSON output
+  --help, help      display usage information
+
+```
+
+```
+Usage: blescan notify [--name <name...>] [--device <device...>] [--service <service...>] [--characteristic <characteristic...>] [--rssi <rssi>] [--timeout <timeout>] [--decode <decode...>] [--decode-file <decode-file...>] [--json]
 
 Subscribe/listen for notify events
 
@@ -106,30 +156,10 @@ Options:
   --rssi            minimum RSSI
   --timeout         timeout
   --decode          decode format <characteristic_uuid::type>
+  --decode-file     file containing decode format <characteristic_uuid::type>
   --json            NDJSON output
   --help, help      display usage information
-```
 
-```
-Usage: blescan write [--name <name...>] [--device <device...>] [--service <service...>] [--write <write...>] [--rssi <rssi>] [--timeout <timeout>] [--without-response] [--json]
-
-Write characteristic data
-
-Options:
-  --name            device name
-  --device          device uuid
-  --service         service uuid
-  --write           write characteristic - characteristic_uuid::data[_type]
-                    (will exit after all characteristics are written - in case
-                    of multiple matching devices this may cause unexpected
-                    results. Use the --name/ --device/--service filters to limit
-                    device matches)
-  --rssi            minimum RSSI
-  --timeout         scan timeout
-  --without-response
-                    force write without response
-  --json            NDJSON output
-  --help, help      display usage information
 ```
 
 ```
@@ -143,6 +173,7 @@ Options:
   --timeout         scan timeout
   --json            NDJSON output
   --help, help      display usage information
+
 ```
 
 ## Examples
@@ -157,12 +188,12 @@ Scan with filters:
 blescan scan --name "Sensor" --rssi -70 --timeout 30
 ```
 
-Enumerate services and read values:
+Enumerate services and read values with JSON output:
 ```
-blescan enumerate --name "MyDevice" --read
+blescan enumerate --name "MyDevice" --read --json
 ```
 
-Enumerate and read all devices with matching services and characteristic:
+Enumerate and read all devices with matching service and characteristic:
 ```
 blescan enumerate --service 0x180a --characteristic 0x2a24 --read
 ```

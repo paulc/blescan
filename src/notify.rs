@@ -14,13 +14,19 @@ use std::time::Duration;
 use crate::commands::NotifyArgs;
 use crate::filter::{device_match, filter};
 use crate::types::{DeviceInfo, NotificationInfo};
-use crate::util::{parse_decoder, parse_uuid, uuid_filter};
+use crate::util::{parse_decoder, parse_uuid, read_all_lines, uuid_filter};
 
 pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
     let service_filter = uuid_filter(&args.service)?;
     let characteristic_filter = uuid_filter(&args.characteristic)?;
     let name_filter = args.name.iter().map(|s| Regex::new(s)).collect::<Result<Vec<_>, _>>()?;
-    let decode_map = parse_decoder(&args.decode)?;
+    let decode_map = parse_decoder(
+        &args
+            .decode
+            .into_iter()
+            .chain(read_all_lines(&args.decode_file)?) // Read from decode_files
+            .collect::<Vec<_>>(),
+    )?;
 
     // Validate device uuids
     args.device
@@ -90,7 +96,7 @@ pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
                                         while let Some(notification) = notification_stream.next().await {
                                             let decoded = decode_map
                                                 .get(&notification.uuid)
-                                                .map(|fmt| fmt.decode(&notification.value));
+                                                .and_then(|fmt| fmt.decode_value(&notification.value).ok());
                                             let n = NotificationInfo {
                                                 service: notification.service_uuid,
                                                 characteristic: notification.uuid,

@@ -5,6 +5,7 @@ use btleplug::platform::Peripheral;
 
 use hex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 
@@ -120,7 +121,7 @@ pub struct CharacteristicInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub decoded: Option<String>,
+    pub decoded: Option<Value>,
     pub descriptors: Vec<DescriptorInfo>,
 }
 
@@ -136,13 +137,13 @@ impl CharacteristicInfo {
             descriptors: c.descriptors.iter().map(|d| DescriptorInfo::new(&d.uuid)).collect(),
         }
     }
-    pub async fn read(&mut self, p: &Peripheral, map: &HashMap<Uuid, CharFormat>) {
+    pub async fn read(&mut self, p: &Peripheral, decode_map: &HashMap<Uuid, CharFormat>) {
         if self.properties.contains(CharPropFlags::READ) {
             self.value = p.read(&self.to_characteristic()).await.ok();
             self.decoded = self
                 .value
                 .as_ref()
-                .and_then(|v| map.get(&self.uuid).map(|fmt| fmt.decode(v)));
+                .and_then(|v| decode_map.get(&self.uuid).and_then(|fmt| fmt.decode_value(v).ok()))
         }
     }
     fn to_characteristic(&self) -> Characteristic {
@@ -229,7 +230,7 @@ pub struct NotificationInfo {
     #[serde(serialize_with = "serialize_hex", deserialize_with = "deserialize_hex")]
     pub value: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub decoded: Option<String>,
+    pub decoded: Option<Value>,
 }
 
 impl std::fmt::Display for NotificationInfo {

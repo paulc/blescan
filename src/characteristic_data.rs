@@ -1,9 +1,13 @@
 use std::fmt::{self, Display, Formatter};
-use std::num::ParseIntError;
+use std::num::{ParseFloatError, ParseIntError};
+use std::str::FromStr;
+
+use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub enum CharDataError {
     ParseIntError(ParseIntError),
+    ParseFloatError(ParseFloatError),
     FormatError(String),
 }
 
@@ -11,6 +15,7 @@ impl Display for CharDataError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             CharDataError::ParseIntError(msg) => write!(f, "Invalid integer: {}", msg),
+            CharDataError::ParseFloatError(msg) => write!(f, "Invalid float: {}", msg),
             CharDataError::FormatError(msg) => write!(f, "Invalid format: {}", msg),
         }
     }
@@ -20,6 +25,7 @@ impl std::error::Error for CharDataError {}
 
 #[derive(Debug, Clone)]
 pub enum CharFormat {
+    Bool,
     U8,
     I8,
     U16,
@@ -28,6 +34,8 @@ pub enum CharFormat {
     I32,
     U64,
     I64,
+    F32,
+    F64,
     Utf8,
 }
 
@@ -35,6 +43,7 @@ impl TryFrom<&str> for CharFormat {
     type Error = CharDataError;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
+            "bool" => Ok(CharFormat::Bool),
             "u8" => Ok(CharFormat::U8),
             "i8" => Ok(CharFormat::I8),
             "u16" => Ok(CharFormat::U16),
@@ -43,6 +52,8 @@ impl TryFrom<&str> for CharFormat {
             "i32" => Ok(CharFormat::I32),
             "u64" => Ok(CharFormat::U64),
             "i64" => Ok(CharFormat::I64),
+            "f32" => Ok(CharFormat::F32),
+            "f64" => Ok(CharFormat::F64),
             "utf8" => Ok(CharFormat::Utf8),
             _ => Err(CharDataError::FormatError("Invalid Format".into())),
         }
@@ -50,34 +61,22 @@ impl TryFrom<&str> for CharFormat {
 }
 
 impl CharFormat {
-    pub fn decode(&self, data: &[u8]) -> String {
-        match self {
-            CharFormat::U8 => TryInto::<[u8; 1]>::try_into(data)
-                .map(|a| format!("{}", u8::from_le_bytes(a)))
-                .unwrap_or("<Invalid Format>".into()),
-            CharFormat::I8 => TryInto::<[u8; 1]>::try_into(data)
-                .map(|a| format!("{}", i8::from_le_bytes(a)))
-                .unwrap_or("<Invalid Format>".into()),
-            CharFormat::U16 => TryInto::<[u8; 2]>::try_into(data)
-                .map(|a| format!("{}", u16::from_le_bytes(a)))
-                .unwrap_or("<Invalid Format>".into()),
-            CharFormat::I16 => TryInto::<[u8; 2]>::try_into(data)
-                .map(|a| format!("{}", i16::from_le_bytes(a)))
-                .unwrap_or("<Invalid Format>".into()),
-            CharFormat::U32 => TryInto::<[u8; 4]>::try_into(data)
-                .map(|a| format!("{}", u32::from_le_bytes(a)))
-                .unwrap_or("<Invalid Format>".into()),
-            CharFormat::I32 => TryInto::<[u8; 4]>::try_into(data)
-                .map(|a| format!("{}", i32::from_le_bytes(a)))
-                .unwrap_or("<Invalid Format>".into()),
-            CharFormat::U64 => TryInto::<[u8; 8]>::try_into(data)
-                .map(|a| format!("{}", u64::from_le_bytes(a)))
-                .unwrap_or("<Invalid Format>".into()),
-            CharFormat::I64 => TryInto::<[u8; 8]>::try_into(data)
-                .map(|a| format!("{}", i64::from_le_bytes(a)))
-                .unwrap_or("<Invalid Format>".into()),
-            CharFormat::Utf8 => TryInto::<String>::try_into(data.to_vec()).unwrap_or("<Invalid Format>".into()),
-        }
+    pub fn decode_value(&self, data: &[u8]) -> anyhow::Result<Value> {
+        let v = match self {
+            CharFormat::Bool => serde_json::to_value(u8::from_le_bytes(TryInto::<[u8; 1]>::try_into(data)?) != 0)?,
+            CharFormat::U8 => serde_json::to_value(u8::from_le_bytes(TryInto::<[u8; 1]>::try_into(data)?))?,
+            CharFormat::I8 => serde_json::to_value(i8::from_le_bytes(TryInto::<[u8; 1]>::try_into(data)?))?,
+            CharFormat::U16 => serde_json::to_value(u16::from_le_bytes(TryInto::<[u8; 2]>::try_into(data)?))?,
+            CharFormat::I16 => serde_json::to_value(i16::from_le_bytes(TryInto::<[u8; 2]>::try_into(data)?))?,
+            CharFormat::U32 => serde_json::to_value(u32::from_le_bytes(TryInto::<[u8; 4]>::try_into(data)?))?,
+            CharFormat::I32 => serde_json::to_value(i32::from_le_bytes(TryInto::<[u8; 4]>::try_into(data)?))?,
+            CharFormat::U64 => serde_json::to_value(u64::from_le_bytes(TryInto::<[u8; 8]>::try_into(data)?))?,
+            CharFormat::I64 => serde_json::to_value(i64::from_le_bytes(TryInto::<[u8; 8]>::try_into(data)?))?,
+            CharFormat::F32 => serde_json::to_value(f32::from_le_bytes(TryInto::<[u8; 4]>::try_into(data)?))?,
+            CharFormat::F64 => serde_json::to_value(f64::from_le_bytes(TryInto::<[u8; 8]>::try_into(data)?))?,
+            CharFormat::Utf8 => serde_json::to_value(TryInto::<String>::try_into(data.to_vec())?)?,
+        };
+        Ok(v)
     }
 }
 
@@ -95,18 +94,18 @@ impl CharData {
 }
 
 /// Macro to create From<_> implementation for int types
-macro_rules! chardata_from_int {
-    ($($int_type:ty),*) => {
+macro_rules! chardata_from_numeric {
+    ($($num_type:ty),*) => {
         $(
-            impl From<$int_type> for CharData {
-                fn from(value: $int_type) -> Self {
+            impl From<$num_type> for CharData {
+                fn from(value: $num_type) -> Self {
                     Self(value.to_le_bytes().to_vec())
                 }
             }
         )*
     };
 }
-chardata_from_int!(i8, u8, i16, u16, i32, u32, i64, u64);
+chardata_from_numeric!(i8, u8, i16, u16, i32, u32, i64, u64, f32, f64);
 
 /// Macro to parse typed int (with optional 0x prefix) into CharData
 macro_rules! parse_int_type {
@@ -127,6 +126,11 @@ impl TryFrom<&str> for CharData {
     type Error = CharDataError;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value.split_once("_") {
+            Some((v, "bool")) => match v.to_lowercase().as_str() {
+                "true" => Ok(CharData(vec![1_u8])),
+                "false" => Ok(CharData(vec![0_u8])),
+                _ => Err(CharDataError::FormatError("Invalid Bool".into())),
+            },
             Some((v, "u8")) => parse_int_type!(v, u8),
             Some((v, "i8")) => parse_int_type!(v, i8),
             Some((v, "u16")) => parse_int_type!(v, u16),
@@ -135,6 +139,12 @@ impl TryFrom<&str> for CharData {
             Some((v, "i32")) => parse_int_type!(v, i32),
             Some((v, "u64")) => parse_int_type!(v, u64),
             Some((v, "i64")) => parse_int_type!(v, i64),
+            Some((v, "f32")) => f32::from_str(v)
+                .map(|f| CharData(f.to_le_bytes().to_vec()))
+                .map_err(|e| CharDataError::ParseFloatError(e)),
+            Some((v, "f64")) => f64::from_str(v)
+                .map(|f| CharData(f.to_le_bytes().to_vec()))
+                .map_err(|e| CharDataError::ParseFloatError(e)),
             Some((v, "utf8")) => Ok(CharData(v.as_bytes().to_vec())),
             Some(_) => Err(CharDataError::FormatError("Invalid Format".into())),
             None => {

@@ -79,6 +79,10 @@ pub struct EnumerateArgs {
     #[argh(option)]
     pub decode: Vec<String>,
 
+    /// file containing decode format <characteristic_uuid::type>
+    #[argh(option)]
+    pub decode_file: Vec<String>,
+
     /// NDJSON output
     #[argh(switch)]
     pub json: bool,
@@ -125,6 +129,10 @@ pub struct PollArgs {
     #[argh(option)]
     pub decode: Vec<String>,
 
+    /// file containing decode format <characteristic_uuid::type>
+    #[argh(option)]
+    pub decode_file: Vec<String>,
+
     /// NDJSON output
     #[argh(switch)]
     pub json: bool,
@@ -162,6 +170,10 @@ pub struct NotifyArgs {
     #[argh(option)]
     pub decode: Vec<String>,
 
+    /// file containing decode format <characteristic_uuid::type>
+    #[argh(option)]
+    pub decode_file: Vec<String>,
+
     /// NDJSON output
     #[argh(switch)]
     pub json: bool,
@@ -188,7 +200,7 @@ pub struct WriteArgs {
     /// matching devices this may cause unexpected results. Use the --name/
     /// --device/--service filters to limit device matches)
     #[argh(option)]
-    pub write: Vec<String>,
+    pub characteristic: Vec<String>,
 
     /// minimum RSSI
     #[argh(option)]

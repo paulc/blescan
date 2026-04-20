@@ -57,7 +57,7 @@ pub fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
     }
 }
 
-pub fn uuid_filter(filters: &Vec<String>) -> anyhow::Result<Arc<HashSet<Uuid>>> {
+pub fn uuid_filter(filters: &[String]) -> anyhow::Result<Arc<HashSet<Uuid>>> {
     Ok(Arc::new(
         filters
             .iter()
@@ -67,7 +67,26 @@ pub fn uuid_filter(filters: &Vec<String>) -> anyhow::Result<Arc<HashSet<Uuid>>> 
     ))
 }
 
-pub fn parse_decoder(decoders: &Vec<String>) -> anyhow::Result<Arc<HashMap<Uuid, CharFormat>>> {
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+
+pub fn read_all_lines(files: &[String]) -> anyhow::Result<Vec<String>> {
+    let mut result = Vec::new();
+    for f in files {
+        let file = File::open(f)?;
+        for line in BufReader::new(file).lines() {
+            if let Ok(line) = line {
+                // Skip commands & blank lines
+                if !(line.trim().is_empty() || line.starts_with("#")) {
+                    result.push(line.trim().to_string());
+                }
+            }
+        }
+    }
+    Ok(result)
+}
+
+pub fn parse_decoder(decoders: &[String]) -> anyhow::Result<Arc<HashMap<Uuid, CharFormat>>> {
     Ok(Arc::new(
         decoders
             .iter()
@@ -83,7 +102,7 @@ pub fn parse_decoder(decoders: &Vec<String>) -> anyhow::Result<Arc<HashMap<Uuid,
     ))
 }
 
-pub fn parse_write(characteristics: &Vec<String>) -> anyhow::Result<Arc<HashMap<Uuid, Vec<u8>>>> {
+pub fn parse_write(characteristics: &[String]) -> anyhow::Result<Arc<HashMap<Uuid, Vec<u8>>>> {
     Ok(Arc::new(
         characteristics
             .iter()
