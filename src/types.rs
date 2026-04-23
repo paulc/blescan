@@ -26,6 +26,7 @@ pub struct DeviceInfo {
 }
 
 impl DeviceInfo {
+    /// Create device from advertisment
     pub async fn new(p: &Peripheral) -> anyhow::Result<Self> {
         let properties = p.properties().await?.unwrap_or_default();
         let id = p.id();
@@ -56,14 +57,13 @@ impl DeviceInfo {
         })
     }
 
+    /// Enumerate device (with filters)
     pub async fn enumerate(
         &mut self,
         peripheral: &Peripheral,
         service_filter: &HashSet<Uuid>,
         characteristic_filter: &HashSet<Uuid>,
-    ) -> anyhow::Result<&Self> {
-        // Ensure we are connected
-        self.connect(peripheral).await?;
+    ) -> anyhow::Result<()> {
         match timeout(Duration::from_secs(ENUMERATE_TIMEOUT), peripheral.discover_services()).await {
             Ok(Ok(_)) => {
                 for service in peripheral.services() {
@@ -85,9 +85,10 @@ impl DeviceInfo {
                 anyhow::bail!("Service discovery failed/timeout for {}", peripheral.id())
             }
         }
-        Ok(self)
+        Ok(())
     }
 
+    /// Connect to device (note that you need to manage connect/disconnect explicitly)
     pub async fn connect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
         if !peripheral.is_connected().await? {
             if let Err(e) = timeout(Duration::from_secs(CONNECT_TIMEOUT), peripheral.connect()).await {
@@ -97,6 +98,7 @@ impl DeviceInfo {
         Ok(())
     }
 
+    /// Disconnect from device (note that you need to manage connect/disconnect explicitly)
     pub async fn disconnect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
         if peripheral.is_connected().await? {
             if let Err(e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), peripheral.disconnect()).await {
@@ -106,19 +108,19 @@ impl DeviceInfo {
         Ok(())
     }
 
+    /// Update RSSI
     pub async fn update_rssi(&mut self, peripheral: &Peripheral) {
         if let Ok(Some(PeripheralProperties { rssi: Some(rssi), .. })) = peripheral.properties().await {
             self.rssi = rssi;
         }
     }
 
+    /// Read data for filtered characteristics
     pub async fn read(
         &mut self,
         peripheral: &Peripheral,
         decode_map: &HashMap<Uuid, CharFormat>,
-    ) -> anyhow::Result<&Self> {
-        // Ensure we are connected
-        self.connect(peripheral).await?;
+    ) -> anyhow::Result<()> {
         for service in self.services.values_mut() {
             for characteristic in service.characteristics.values_mut() {
                 if let Err(_) = characteristic.read(peripheral, &decode_map).await {
@@ -127,12 +129,11 @@ impl DeviceInfo {
             }
         }
         self.update_rssi(peripheral).await;
-        Ok(self)
+        Ok(())
     }
 
+    /// Subscribe to filtered characteristics
     pub async fn subscribe(&mut self, peripheral: &Peripheral) -> anyhow::Result<Vec<SubscriptionInfo>> {
-        // Ensure we are connected
-        self.connect(peripheral).await?;
         let mut result = Vec::new();
         for service in self.services.values_mut() {
             for characteristic in service.characteristics.values_mut() {
