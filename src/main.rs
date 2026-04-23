@@ -10,6 +10,8 @@ mod filter;
 mod notify;
 mod poll;
 mod scan;
+mod scan_iter;
+mod scanner;
 mod types;
 mod util;
 mod write;
@@ -41,6 +43,7 @@ async fn main() -> anyhow::Result<()> {
     // Run command
     match args.command {
         Commands::Scan(args) => scan::run(central, args).await?,
+        Commands::ScanIter(args) => scan_iter::run(central, args).await?,
         Commands::Enumerate(args) => enumerate::run(central, args).await?,
         Commands::Poll(args) => poll::run(central, args).await?,
         Commands::Notify(args) => notify::run(central, args).await?,

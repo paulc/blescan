@@ -6,12 +6,16 @@ use btleplug::platform::Peripheral;
 use hex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
-use std::collections::{BTreeSet, HashMap};
+use tokio::time::timeout;
 use uuid::Uuid;
 
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::time::Duration;
+
 use crate::characteristic_data::CharFormat;
-use crate::util::format_properties;
+use crate::util::{format_properties, parse_uuid};
 use crate::{CHARACTERISTIC_MAP, DESCRIPTOR_MAP, SERVICE_MAP};
+use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
@@ -51,10 +55,95 @@ impl DeviceInfo {
             services,
         })
     }
-    pub async fn update_rssi(&mut self, p: &Peripheral) {
-        if let Ok(Some(PeripheralProperties { rssi: Some(rssi), .. })) = p.properties().await {
+
+    pub async fn enumerate(
+        &mut self,
+        peripheral: &Peripheral,
+        service_filter: &HashSet<Uuid>,
+        characteristic_filter: &HashSet<Uuid>,
+    ) -> anyhow::Result<&Self> {
+        // Ensure we are connected
+        self.connect(peripheral).await?;
+        match timeout(Duration::from_secs(ENUMERATE_TIMEOUT), peripheral.discover_services()).await {
+            Ok(Ok(_)) => {
+                for service in peripheral.services() {
+                    if service_filter.is_empty() || service_filter.contains(&service.uuid) {
+                        for characteristic in &service.characteristics {
+                            if characteristic_filter.is_empty() || characteristic_filter.contains(&characteristic.uuid)
+                            {
+                                self.services
+                                    .entry(service.uuid.clone())
+                                    .or_insert(ServiceInfo::new(&service))
+                                    .characteristics
+                                    .insert(characteristic.uuid.clone(), CharacteristicInfo::new(&characteristic));
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                anyhow::bail!("Service discovery failed/timeout for {}", peripheral.id())
+            }
+        }
+        Ok(self)
+    }
+
+    pub async fn connect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
+        if !peripheral.is_connected().await? {
+            if let Err(e) = timeout(Duration::from_secs(CONNECT_TIMEOUT), peripheral.connect()).await {
+                anyhow::bail!("Connect timeout/error for {}: {:?}", peripheral.id(), e);
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn disconnect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
+        if peripheral.is_connected().await? {
+            if let Err(e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), peripheral.disconnect()).await {
+                anyhow::bail!("Disconnect timeout/error for {}: {:?}", peripheral.id(), e);
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn update_rssi(&mut self, peripheral: &Peripheral) {
+        if let Ok(Some(PeripheralProperties { rssi: Some(rssi), .. })) = peripheral.properties().await {
             self.rssi = rssi;
         }
+    }
+
+    pub async fn read(
+        &mut self,
+        peripheral: &Peripheral,
+        decode_map: &HashMap<Uuid, CharFormat>,
+    ) -> anyhow::Result<&Self> {
+        // Ensure we are connected
+        self.connect(peripheral).await?;
+        for service in self.services.values_mut() {
+            for characteristic in service.characteristics.values_mut() {
+                if let Err(_) = characteristic.read(peripheral, &decode_map).await {
+                    anyhow::bail!("Error reading characteristic data: {}", characteristic.uuid);
+                }
+            }
+        }
+        self.update_rssi(peripheral).await;
+        Ok(self)
+    }
+
+    pub async fn subscribe(&mut self, peripheral: &Peripheral) -> anyhow::Result<Vec<SubscriptionInfo>> {
+        // Ensure we are connected
+        self.connect(peripheral).await?;
+        let mut result = Vec::new();
+        for service in self.services.values_mut() {
+            for characteristic in service.characteristics.values_mut() {
+                match characteristic.subscribe(peripheral).await {
+                    Ok(Some(s)) => result.push(s),
+                    Ok(None) => {}
+                    Err(e) => anyhow::bail!("Error subscribing: {} {}", characteristic.uuid, e),
+                }
+            }
+        }
+        Ok(result)
     }
 }
 
@@ -147,6 +236,19 @@ impl CharacteristicInfo {
         }
         Ok(())
     }
+    pub async fn subscribe(&mut self, peripheral: &Peripheral) -> anyhow::Result<Option<SubscriptionInfo>> {
+        if self.properties.contains(CharPropFlags::NOTIFY) || self.properties.contains(CharPropFlags::INDICATE) {
+            peripheral.subscribe(&self.to_characteristic()).await?;
+            Ok(Some(SubscriptionInfo {
+                device: parse_uuid(&peripheral.id().to_string())?,
+                service: self.service_uuid,
+                characteristic: self.uuid,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+    // XXX Possibly store characteristic rather than re-computing?
     fn to_characteristic(&self) -> Characteristic {
         Characteristic {
             uuid: self.uuid.clone(),
@@ -193,6 +295,24 @@ impl std::fmt::Display for CharacteristicInfo {
         if let Some(ref decoded) = self.decoded {
             writeln!(f, "          Decoded: {}", decoded)?;
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubscriptionInfo {
+    pub device: Uuid,
+    pub service: Uuid,
+    pub characteristic: Uuid,
+}
+
+impl std::fmt::Display for SubscriptionInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Subscribed :: Device: {}\n              └─ Service: {}\n                  └─ Characteristic: {}",
+            self.device, self.service, self.characteristic
+        )?;
         Ok(())
     }
 }

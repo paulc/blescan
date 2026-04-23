@@ -11,11 +11,37 @@ pub struct Args {
 #[argh(subcommand)]
 pub enum Commands {
     Scan(ScanArgs),
+    ScanIter(ScanIterArgs),
     Enumerate(EnumerateArgs),
     Poll(PollArgs),
     Write(WriteArgs),
     Notify(NotifyArgs),
     Dump(DumpArgs),
+}
+
+#[derive(FromArgs, Debug)]
+/// Scan BLE Devices
+#[argh(subcommand, name = "scaniter")]
+pub struct ScanIterArgs {
+    /// filter device name [multiple allowed]
+    #[argh(option)]
+    pub name: Vec<String>,
+
+    /// filter device uuid [multiple allowed]
+    #[argh(option)]
+    pub device: Vec<String>,
+
+    /// minimum RSSI
+    #[argh(option)]
+    pub rssi: Option<i16>,
+
+    /// scan timeout
+    #[argh(option)]
+    pub timeout: Option<u64>,
+
+    /// NDJSON output
+    #[argh(switch)]
+    pub json: bool,
 }
 
 #[derive(FromArgs, Debug)]

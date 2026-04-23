@@ -3,6 +3,8 @@ use btleplug::api::CharPropFlags;
 use uuid::Uuid;
 
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 
 use crate::characteristic_data::{CharData, CharFormat};
@@ -67,9 +69,6 @@ pub fn uuid_filter(filters: &[String]) -> anyhow::Result<Arc<HashSet<Uuid>>> {
     ))
 }
 
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-
 pub fn read_all_lines(files: &[String]) -> anyhow::Result<Vec<String>> {
     let mut result = Vec::new();
     for f in files {
@@ -116,4 +115,27 @@ pub fn parse_write(characteristics: &[String]) -> anyhow::Result<Arc<HashMap<Uui
             .collect::<Result<HashMap<_, _>, _>>()
             .context("Error Parsing Write Data")?,
     ))
+}
+
+pub async fn run_with_timeout<F>(timeout_secs: Option<u64>, json: bool, task: F) -> anyhow::Result<()>
+where
+    F: std::future::Future<Output = anyhow::Result<()>>,
+{
+    if let Some(t) = timeout_secs {
+        if !json {
+            println!("Listening for BLE advertisements: Timeout {t} secs");
+        }
+        match tokio::time::timeout(std::time::Duration::from_secs(t), task).await {
+            Ok(result) => result.map_err(|e| anyhow::anyhow!("Scan Error: {e}")),
+            Err(_) => {
+                println!("\n[!] Timeout reached. Stopping scan.");
+                Ok(())
+            }
+        }
+    } else {
+        if !json {
+            println!("Listening for BLE advertisements: Ctrl+C to stop");
+        }
+        task.await.map_err(|e| anyhow::anyhow!("Scan Error: {e}"))
+    }
 }
