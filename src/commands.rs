@@ -243,7 +243,8 @@ pub struct WriteArgs {
     /// write characteristic - characteristic_uuid::data[_type]
     /// (will exit after all characteristics are written - in case of multiple
     /// matching devices this may cause unexpected results. Use the --name/
-    /// --device/--service filters to limit device matches)
+    /// --device/--service filters to limit device matches).
+    /// (Note that this does not handle partial writes)
     #[argh(option)]
     pub characteristic: Vec<String>,
 
