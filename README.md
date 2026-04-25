@@ -95,7 +95,7 @@ be skipped). e.g.
 ```
 
 It is possible to dump to equivalent JSON for a CLI command using 
-`blescan --dump-json enumerate ...args`.
+`blescan --dump-json <command> [..args]`.
 
 You can pass the json file from stdin using `blescan run -- -`.
 
@@ -297,4 +297,8 @@ cargo build --release
 ```
 
 Executable is `target/release/blescan`
+
+Note that you need Rust 2024 edition (Rust 1.85 stable).
+
+(Build/tested on MacOS - the underlying `btleplug` crate should work on Linux/Windows but I haven't tested this)
 
