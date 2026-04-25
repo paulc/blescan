@@ -4,7 +4,7 @@ use btleplug::api::{
 };
 use btleplug::platform::Peripheral;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 use serde_json::Value;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -17,7 +17,7 @@ use crate::util::{format_properties, parse_uuid};
 use crate::{CHARACTERISTIC_MAP, DESCRIPTOR_MAP, SERVICE_MAP};
 use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, WRITE_TIMEOUT};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DeviceInfo {
     pub id: Uuid,
     pub name: String,
@@ -158,11 +158,10 @@ impl std::fmt::Display for DeviceInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ServiceInfo {
     pub uuid: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(skip_deserializing)]
     pub service_type: Option<&'static str>,
     pub characteristics: HashMap<Uuid, CharacteristicInfo>,
 }
@@ -197,17 +196,15 @@ impl std::fmt::Display for ServiceInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CharacteristicInfo {
     pub uuid: Uuid,
     pub service_uuid: Uuid,
-    #[serde(skip_deserializing)]
     #[serde(serialize_with = "serialize_char_props")]
     pub properties: CharPropFlags,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(skip_deserializing)]
     pub characteristic_type: Option<&'static str>,
-    #[serde(serialize_with = "serialize_hex_option", deserialize_with = "deserialize_hex_option")]
+    #[serde(serialize_with = "serialize_hex_option")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -326,7 +323,7 @@ impl std::fmt::Display for CharacteristicInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SubscriptionInfo {
     pub device: Uuid,
     pub service: Uuid,
@@ -344,7 +341,7 @@ impl std::fmt::Display for SubscriptionInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DescriptorInfo {
     pub uuid: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -371,11 +368,11 @@ impl std::fmt::Display for DescriptorInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct NotificationData {
     pub service: Uuid,
     pub characteristic: Uuid,
-    #[serde(serialize_with = "serialize_hex", deserialize_with = "deserialize_hex")]
+    #[serde(serialize_with = "serialize_hex")]
     pub value: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decoded: Option<Value>,
@@ -412,15 +409,6 @@ where
     serializer.serialize_str(&hex::encode(bytes).to_string())
 }
 
-fn deserialize_hex<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s); // Strip 0x
-    hex::decode(s).map_err(serde::de::Error::custom)
-}
-
 fn serialize_char_props<S>(props: &CharPropFlags, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -438,19 +426,5 @@ where
             serializer.serialize_str(&hex)
         }
         None => serializer.serialize_none(),
-    }
-}
-
-fn deserialize_hex_option<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt: Option<String> = Option::deserialize(deserializer)?;
-    match opt {
-        Some(s) => {
-            let s = s.strip_prefix("0x").unwrap_or(&s); // Strip 0x
-            hex::decode(s).map(Some).map_err(serde::de::Error::custom)
-        }
-        None => Ok(None),
     }
 }

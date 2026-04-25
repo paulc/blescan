@@ -13,6 +13,7 @@ Supports human readable text and JSON outputs (for further filtering/processing)
 | `notify` | Subscribe to notification events |
 | `write` | Write data to characteristics |
 | `dump` | Raw advertisement event stream with optional event filtering |
+| `run` | Run command from JSON file |
 
 ## Filtering
 
@@ -61,7 +62,63 @@ Characteristic data can be encoded for the `write` command using the format
 If format is specified (same formats as decode) then the data is encoded 
 using this format, if no format is specified data is assumed to be hex bytes.
 
+## Run
+
+The `blescan run <command.json>` sub-command will run the command defined in
+the specified json file. The JSON file format is an object containing the
+command type and associated cli parameters as an object (empty parameters can
+be skipped). e.g.
+
+```
+{
+  "Enumerate": {
+    "read": true,
+    "name": [],
+    "device": [],
+    "service": [
+      "00000001-7104-4a99-8a78-02108a60f098"
+    ],
+    "characteristic": [],
+    "rssi": null,
+    "timeout": 10,
+    "decode": [
+      "00000002-7104-4a99-8a78-02108a60f098::u32",
+      "00000003-7104-4a99-8a78-02108a60f098::utf8",
+      "00000005-7104-4a99-8a78-02108a60f098::bool",
+      "00000006-7104-4a99-8a78-02108a60f098::f32"
+    ],
+    "decode_file": [],
+    "json": true,
+    "max": 1
+  }
+}
+```
+
+It is possible to dump to equivalent JSON for a CLI command using 
+`blescan --dump-json enumerate ...args`.
+
+You can pass the json file from stdin using `blescan run -- -`.
+
 ## Usage
+
+```
+Usage: blescan [--dump-json] <command> [<args>]
+
+Simple BLE scanner
+
+Options:
+  --dump-json       show equivalient JSON run command
+  --help, help      display usage information
+
+Commands:
+  scan              Scan BLE Devices
+  enumerate         Enumerate BLE Devices
+  poll              Read service data continuously
+  write             Write characteristic data
+  notify            Subscribe/listen for notify events
+  dump              Dump raw BLE advertisement data
+  run               Run JSON command file
+```
 
 ```
 Usage: blescan scan [--name <name...>] [--device <device...>] [--rssi <rssi>] [--timeout <timeout>] [--json]

@@ -76,7 +76,7 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                             println!("{}", serde_json::to_string(
                                                     &json!({ "write_status": status }))?);
                                         } else {
-                                            print!("[+] Write Successful: {}", status.uuid)
+                                            println!("[+] Write Successful: {}", status.uuid)
                                         }
                                     if n_write.fetch_sub(1, Ordering::Relaxed) == 1 {
                                         // Previous value = 1 - signal completion
