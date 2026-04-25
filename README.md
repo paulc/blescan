@@ -233,6 +233,19 @@ Options:
 
 ```
 
+```
+Usage: blescan run [--] <path>
+
+Run JSON command file
+
+Positional Arguments:
+  path
+
+Options:
+  --help, help      display usage information
+
+```
+
 ## Examples
 
 Scan for devices:
