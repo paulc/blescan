@@ -50,14 +50,15 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                     break;
                 }
                 Ok(Some((peripheral, mut device))) = scanner.next_match() => {
-                    tokio::spawn({
+                    tokio::spawn(
+                        {
                         let service_filter = Arc::clone(&service_filter);
                         let characteristic_filter = Arc::clone(&characteristic_filter);
                         let write_map = Arc::clone(&write_map);
                         let n_write = Arc::clone(&n_write);
                         let tx = tx.clone();
                         async move {
-                            let result = {
+                            let result = async {
                                 device.connect(&peripheral).await?;
                                 device
                                     .enumerate(&peripheral, &service_filter, &characteristic_filter)
@@ -65,28 +66,28 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                 for service in device.services.values_mut() {
                                     for (uuid,characteristic) in &mut service.characteristics {
                                         let status = match characteristic.write(
-                                            &peripheral,
-                                            args.without_response,
-                                            write_map.get(uuid).context(format!("Write data not found: {}", uuid))?
-                                        ).await {
-                                            Ok(_) => WriteStatus { uuid: *uuid, status: true, error: None },
-                                            Err(e) => WriteStatus { uuid: *uuid, status: false, error: Some(e.to_string()) }
-                                        };
+                                                &peripheral,
+                                                args.without_response,
+                                                write_map.get(uuid).context(format!("Write data not found: {}", uuid))?
+                                            ).await {
+                                                Ok(_) => WriteStatus { uuid: *uuid, status: true, error: None },
+                                                Err(e) => WriteStatus { uuid: *uuid, status: false, error: Some(e.to_string()) }
+                                            };
                                         if json {
                                             println!("{}", serde_json::to_string(
                                                     &json!({ "write_status": status }))?);
                                         } else {
                                             println!("[+] Write Successful: {}", status.uuid)
                                         }
-                                    if n_write.fetch_sub(1, Ordering::Relaxed) == 1 {
-                                        // Previous value = 1 - signal completion
-                                        let _ = tx.send(()).await;
-                                    }
+                                        if n_write.fetch_sub(1, Ordering::Relaxed) == 1 {
+                                            // Previous value = 1 - signal completion
+                                            let _ = tx.send(()).await;
+                                        }
                                     }
                                 }
-                                device.disconnect(&peripheral).await?;
                                 Ok::<(), anyhow::Error>(())
-                            };
+                            }.await;
+                            let _ = device.disconnect(&peripheral).await;
                             if let Err(e) = result {
                                 eprintln!("Write Error: {}", e)
                             }

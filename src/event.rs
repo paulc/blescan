@@ -1,8 +1,10 @@
 use crate::types::DeviceInfo;
 use btleplug::api::{Central, CentralEvent, CentralState, bleuuid::BleUuid};
 use btleplug::platform::{Adapter, PeripheralId};
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 use uuid::Uuid;
+
+use crate::util::serialize_hex;
 
 pub struct EventWrapper(pub CentralEvent);
 
@@ -230,11 +232,4 @@ impl TryFrom<&str> for EventFilter {
             _ => Err(anyhow::anyhow!("Invalid event filter")),
         }
     }
-}
-
-fn serialize_hex<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&hex::encode(bytes).to_string())
 }

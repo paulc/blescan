@@ -1,5 +1,6 @@
 use anyhow::Context;
 use btleplug::api::CharPropFlags;
+use serde::Serializer;
 use uuid::Uuid;
 
 use std::collections::{HashMap, HashSet};
@@ -8,6 +9,33 @@ use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 
 use crate::characteristic_data::{CharData, CharFormat};
+
+pub fn serialize_hex<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&hex::encode(bytes).to_string())
+}
+
+pub fn serialize_char_props<S>(props: &CharPropFlags, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&format_properties(props))
+}
+
+pub fn serialize_hex_option<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match bytes {
+        Some(v) => {
+            let hex = hex::encode(v).to_string();
+            serializer.serialize_str(&hex)
+        }
+        None => serializer.serialize_none(),
+    }
+}
 
 pub fn format_properties(props: &CharPropFlags) -> String {
     let mut p = Vec::new();

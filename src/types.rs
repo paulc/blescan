@@ -4,7 +4,7 @@ use btleplug::api::{
 };
 use btleplug::platform::Peripheral;
 
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 use serde_json::Value;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -13,7 +13,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 
 use crate::characteristic_data::CharFormat;
-use crate::util::{format_properties, parse_uuid};
+use crate::util::{format_properties, parse_uuid, serialize_char_props, serialize_hex, serialize_hex_option};
 use crate::{CHARACTERISTIC_MAP, DESCRIPTOR_MAP, SERVICE_MAP};
 use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, WRITE_TIMEOUT};
 
@@ -399,32 +399,5 @@ impl std::fmt::Display for NotificationData {
             )?;
         }
         Ok(())
-    }
-}
-
-fn serialize_hex<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&hex::encode(bytes).to_string())
-}
-
-fn serialize_char_props<S>(props: &CharPropFlags, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&format_properties(props))
-}
-
-fn serialize_hex_option<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match bytes {
-        Some(v) => {
-            let hex = hex::encode(v).to_string();
-            serializer.serialize_str(&hex)
-        }
-        None => serializer.serialize_none(),
     }
 }
