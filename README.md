@@ -190,7 +190,8 @@ Options:
                     (will exit after all characteristics are written - in case
                     of multiple matching devices this may cause unexpected
                     results. Use the --name/ --device/--service filters to limit
-                    device matches)
+                    device matches). (Note that this does not handle partial
+                    writes)
   --rssi            minimum RSSI
   --timeout         scan timeout
   --without-response
