@@ -1,3 +1,7 @@
+/*
+ * Callback based filter - not used - repleced by async scanner iterator
+ */
+
 use btleplug::api::{Characteristic, Peripheral as _, Service};
 use btleplug::platform::Peripheral;
 use regex::Regex;

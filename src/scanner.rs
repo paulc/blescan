@@ -1,12 +1,14 @@
-use crate::filter::device_match;
-use crate::types::DeviceInfo;
 use btleplug::api::{Central, CentralEvent, ScanFilter};
 use btleplug::platform::{Adapter, Peripheral, PeripheralId};
 use futures::Stream;
 use futures::stream::StreamExt;
 use regex::Regex;
+use uuid::Uuid;
+
 use std::collections::HashSet;
 use std::pin::Pin;
+
+use crate::types::DeviceInfo;
 
 /// Wraps the boilerplate BLE event stream and filtering logic
 pub struct DeviceScanner {
@@ -15,16 +17,19 @@ pub struct DeviceScanner {
     seen: HashSet<PeripheralId>,
     rssi_filter: Option<i16>,
     name_filter: Vec<Regex>,
-    device_filter: Vec<String>,
+    device_filter: Vec<Uuid>,
 }
 
 impl DeviceScanner {
+    /// Create scanner
     pub async fn start(
         central: Adapter,
         rssi_filter: Option<i16>,
         name_filter: Vec<Regex>,
-        device_filter: Vec<String>,
+        device_filter: Vec<Uuid>,
     ) -> anyhow::Result<Self> {
+        // ScanFilter only checks for services in the Advertisement payload
+        // rather then the full list of GATT services (which need connection)
         central.start_scan(ScanFilter::default()).await?;
         let events = central.events().await?;
 
@@ -38,7 +43,7 @@ impl DeviceScanner {
         })
     }
 
-    /// Pulls the next event and returns it if it passes all device filters
+    /// Pull the next event and returns it if it passes all device filters
     pub async fn next_match(&mut self) -> anyhow::Result<Option<(Peripheral, DeviceInfo)>> {
         while let Some(event) = self.events.next().await {
             if let CentralEvent::DeviceDiscovered(id) = event {
@@ -48,7 +53,11 @@ impl DeviceScanner {
                 self.seen.insert(id.clone());
                 if let Ok(peripheral) = self.central.peripheral(&id).await {
                     if let Ok(device) = DeviceInfo::new(&peripheral).await {
-                        if device_match(&device, &self.rssi_filter, &self.name_filter, &self.device_filter) {
+                        if self.rssi_filter.is_none_or(|rssi| device.rssi >= rssi)
+                            && (self.name_filter.is_empty()
+                                || self.name_filter.iter().any(|r| r.is_match(&device.name)))
+                            && (self.device_filter.is_empty() || self.device_filter.iter().any(|id| device.id == *id))
+                        {
                             return Ok(Some((peripheral, device)));
                         }
                     }

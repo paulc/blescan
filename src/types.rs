@@ -1,5 +1,6 @@
 use btleplug::api::{
-    CharPropFlags, Characteristic, Descriptor, Peripheral as _, PeripheralProperties, Service, bleuuid::BleUuid,
+    CharPropFlags, Characteristic, Descriptor, Peripheral as _, PeripheralProperties, Service, WriteType,
+    bleuuid::BleUuid,
 };
 use btleplug::platform::Peripheral;
 
@@ -15,11 +16,11 @@ use std::time::Duration;
 use crate::characteristic_data::CharFormat;
 use crate::util::{format_properties, parse_uuid};
 use crate::{CHARACTERISTIC_MAP, DESCRIPTOR_MAP, SERVICE_MAP};
-use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT};
+use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, WRITE_TIMEOUT};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
-    pub id: String,
+    pub id: Uuid,
     pub name: String,
     pub rssi: i16,
     pub services: HashMap<Uuid, ServiceInfo>,
@@ -29,7 +30,7 @@ impl DeviceInfo {
     /// Create device from advertisment
     pub async fn new(p: &Peripheral) -> anyhow::Result<Self> {
         let properties = p.properties().await?.unwrap_or_default();
-        let id = p.id();
+        let id = parse_uuid(&p.id().to_string())?; // Uuid is private so have to parse 
         let name = properties.local_name.clone().unwrap_or_else(|| "Unknown".to_string());
         let rssi = properties.rssi.unwrap_or(0);
         // Read basic service data from the advertisment
@@ -50,8 +51,8 @@ impl DeviceInfo {
             })
             .collect::<HashMap<_, _>>();
         Ok(DeviceInfo {
-            id: id.to_string(),
-            name: name,
+            id,
+            name,
             rssi,
             services,
         })
@@ -237,6 +238,32 @@ impl CharacteristicInfo {
         }
         Ok(())
     }
+    pub async fn write(&mut self, p: &Peripheral, without_response: bool, value: &[u8]) -> anyhow::Result<()> {
+        if self.properties.contains(CharPropFlags::WRITE)
+            || self.properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
+        {
+            match timeout(
+                Duration::from_secs(WRITE_TIMEOUT),
+                p.write(
+                    &self.to_characteristic(),
+                    value,
+                    if self.properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE) || without_response {
+                        WriteType::WithoutResponse
+                    } else {
+                        WriteType::WithResponse
+                    },
+                ),
+            )
+            .await
+            {
+                Ok(Ok(_)) => Ok(()),
+                Ok(Err(e)) => anyhow::bail!("Write Error: {} -> {}", self.uuid, e),
+                Err(_) => anyhow::bail!("Write Timeout: {}", self.uuid),
+            }
+        } else {
+            anyhow::bail!("Characteristic not writeable: {}", self.uuid)
+        }
+    }
     pub async fn subscribe(&mut self, peripheral: &Peripheral) -> anyhow::Result<Option<SubscriptionInfo>> {
         if self.properties.contains(CharPropFlags::NOTIFY) || self.properties.contains(CharPropFlags::INDICATE) {
             peripheral.subscribe(&self.to_characteristic()).await?;
@@ -346,7 +373,7 @@ impl std::fmt::Display for DescriptorInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NotificationInfo {
+pub struct NotificationData {
     pub service: Uuid,
     pub characteristic: Uuid,
     #[serde(serialize_with = "serialize_hex", deserialize_with = "deserialize_hex")]
@@ -355,7 +382,7 @@ pub struct NotificationInfo {
     pub decoded: Option<Value>,
 }
 
-impl std::fmt::Display for NotificationInfo {
+impl std::fmt::Display for NotificationData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ref decoded) = self.decoded {
             write!(
