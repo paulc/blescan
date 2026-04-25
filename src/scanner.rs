@@ -10,7 +10,7 @@ use std::pin::Pin;
 
 use crate::types::DeviceInfo;
 
-/// Wraps the boilerplate BLE event stream and filtering logic
+/// Wraps BLE event stream and filtering logic
 pub struct DeviceScanner {
     central: Adapter,
     events: Pin<Box<dyn Stream<Item = CentralEvent> + Send>>,
@@ -51,16 +51,13 @@ impl DeviceScanner {
                     continue;
                 }
                 self.seen.insert(id.clone());
-                if let Ok(peripheral) = self.central.peripheral(&id).await {
-                    if let Ok(device) = DeviceInfo::new(&peripheral).await {
-                        if self.rssi_filter.is_none_or(|rssi| device.rssi >= rssi)
-                            && (self.name_filter.is_empty()
-                                || self.name_filter.iter().any(|r| r.is_match(&device.name)))
-                            && (self.device_filter.is_empty() || self.device_filter.iter().any(|id| device.id == *id))
-                        {
-                            return Ok(Some((peripheral, device)));
-                        }
-                    }
+                if let Ok(peripheral) = self.central.peripheral(&id).await
+                    && let Ok(device) = DeviceInfo::new(&peripheral).await
+                    && self.rssi_filter.is_none_or(|rssi| device.rssi >= rssi)
+                    && (self.name_filter.is_empty() || self.name_filter.iter().any(|r| r.is_match(&device.name)))
+                    && (self.device_filter.is_empty() || self.device_filter.contains(&device.id))
+                {
+                    return Ok(Some((peripheral, device)));
                 }
             }
         }

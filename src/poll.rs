@@ -60,7 +60,7 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
                             }
                         }
                     };
-                    Err::<(), anyhow::Error>(e.into())
+                    Err::<(), anyhow::Error>(e)
                 }
             });
         }

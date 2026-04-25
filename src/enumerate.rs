@@ -57,7 +57,7 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                         let max = Arc::clone(&max);
                         let tx = tx.clone();
                         async move {
-                            match {
+                            let result = {
                                 device.connect(&peripheral).await?;
                                 device
                                     .enumerate(&peripheral, &service_filter, &characteristic_filter)
@@ -81,9 +81,9 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                                 }
                                 device.disconnect(&peripheral).await?;
                                 Ok::<(), anyhow::Error>(())
-                            } {
-                                Ok(_) => {}
-                                Err(e) => println!("Error: {e}"),
+                            };
+                            if let Err(e) = result && !json {
+                                eprintln!("Error: {e}")
                             }
                             Ok::<(), anyhow::Error>(())
                         }

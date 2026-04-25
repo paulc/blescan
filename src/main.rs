@@ -6,6 +6,7 @@ mod characteristic_data;
 mod commands;
 mod dump;
 mod enumerate;
+mod event;
 mod notify;
 mod poll;
 mod scan;

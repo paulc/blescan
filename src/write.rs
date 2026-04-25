@@ -1,6 +1,8 @@
 use anyhow::Context;
 use btleplug::platform::Adapter;
 use regex::Regex;
+use serde::Serialize;
+use serde_json::json;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -11,6 +13,13 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use crate::commands::WriteArgs;
 use crate::scanner::DeviceScanner;
 use crate::util::{parse_uuid, parse_write, run_with_timeout, uuid_filter};
+
+#[derive(Debug, Clone, Serialize)]
+struct WriteStatus {
+    uuid: Uuid,
+    status: bool,
+    error: Option<String>,
+}
 
 pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
     let device_filter = args
@@ -48,22 +57,26 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                         let n_write = Arc::clone(&n_write);
                         let tx = tx.clone();
                         async move {
-                            match {
+                            let result = {
                                 device.connect(&peripheral).await?;
                                 device
                                     .enumerate(&peripheral, &service_filter, &characteristic_filter)
                                     .await?;
                                 for service in device.services.values_mut() {
                                     for (uuid,characteristic) in &mut service.characteristics {
-                                        characteristic.write(
+                                        let status = match characteristic.write(
                                             &peripheral,
                                             args.without_response,
-                                            &write_map.get(&uuid).context(format!("Write data not found: {}", uuid))?
-                                        ).await?;
+                                            write_map.get(uuid).context(format!("Write data not found: {}", uuid))?
+                                        ).await {
+                                            Ok(_) => WriteStatus { uuid: *uuid, status: true, error: None },
+                                            Err(e) => WriteStatus { uuid: *uuid, status: false, error: Some(e.to_string()) }
+                                        };
                                         if json {
-                                            println!("{}", uuid)
+                                            println!("{}", serde_json::to_string(
+                                                    &json!({ "write_status": status }))?);
                                         } else {
-                                            print!("[+] Write Successful: {}", uuid)
+                                            print!("[+] Write Successful: {}", status.uuid)
                                         }
                                     if n_write.fetch_sub(1, Ordering::Relaxed) == 1 {
                                         // Previous value = 1 - signal completion
@@ -73,9 +86,9 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                 }
                                 device.disconnect(&peripheral).await?;
                                 Ok::<(), anyhow::Error>(())
-                            } {
-                                Ok(_) => {}
-                                Err(e) => println!("Error: {e}"),
+                            };
+                            if let Err(e) = result {
+                                eprintln!("Write Error: {}", e)
                             }
                             Ok::<(), anyhow::Error>(())
                         }

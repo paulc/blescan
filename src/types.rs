@@ -4,7 +4,6 @@ use btleplug::api::{
 };
 use btleplug::platform::Peripheral;
 
-use hex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use tokio::time::timeout;
@@ -43,7 +42,7 @@ impl DeviceInfo {
                 (
                     uuid,
                     ServiceInfo {
-                        uuid: uuid,
+                        uuid,
                         service_type: SERVICE_MAP.get(&uuid).map(|v| &**v),
                         characteristics: HashMap::new(),
                     },
@@ -73,10 +72,10 @@ impl DeviceInfo {
                             if characteristic_filter.is_empty() || characteristic_filter.contains(&characteristic.uuid)
                             {
                                 self.services
-                                    .entry(service.uuid.clone())
+                                    .entry(service.uuid)
                                     .or_insert(ServiceInfo::new(&service))
                                     .characteristics
-                                    .insert(characteristic.uuid.clone(), CharacteristicInfo::new(&characteristic));
+                                    .insert(characteristic.uuid, CharacteristicInfo::new(characteristic));
                             }
                         }
                     }
@@ -91,20 +90,20 @@ impl DeviceInfo {
 
     /// Connect to device (note that you need to manage connect/disconnect explicitly)
     pub async fn connect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
-        if !peripheral.is_connected().await? {
-            if let Err(e) = timeout(Duration::from_secs(CONNECT_TIMEOUT), peripheral.connect()).await {
-                anyhow::bail!("Connect timeout/error for {}: {:?}", peripheral.id(), e);
-            }
+        if !peripheral.is_connected().await?
+            && let Err(e) = timeout(Duration::from_secs(CONNECT_TIMEOUT), peripheral.connect()).await
+        {
+            anyhow::bail!("Connect timeout/error for {}: {:?}", peripheral.id(), e);
         }
         Ok(())
     }
 
     /// Disconnect from device (note that you need to manage connect/disconnect explicitly)
     pub async fn disconnect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
-        if peripheral.is_connected().await? {
-            if let Err(e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), peripheral.disconnect()).await {
-                anyhow::bail!("Disconnect timeout/error for {}: {:?}", peripheral.id(), e);
-            }
+        if peripheral.is_connected().await?
+            && let Err(e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), peripheral.disconnect()).await
+        {
+            anyhow::bail!("Disconnect timeout/error for {}: {:?}", peripheral.id(), e);
         }
         Ok(())
     }
@@ -124,7 +123,7 @@ impl DeviceInfo {
     ) -> anyhow::Result<()> {
         for service in self.services.values_mut() {
             for characteristic in service.characteristics.values_mut() {
-                if let Err(_) = characteristic.read(peripheral, &decode_map).await {
+                if characteristic.read(peripheral, decode_map).await.is_err() {
                     anyhow::bail!("Error reading characteristic data: {}", characteristic.uuid);
                 }
             }
@@ -171,8 +170,8 @@ pub struct ServiceInfo {
 impl ServiceInfo {
     pub fn new(s: &Service) -> Self {
         Self {
-            uuid: s.uuid.clone(),
-            service_type: SERVICE_MAP.get(&s.uuid).map(|&v| &*v),
+            uuid: s.uuid,
+            service_type: SERVICE_MAP.get(&s.uuid).copied(),
             characteristics: HashMap::new(),
         }
     }
@@ -219,9 +218,9 @@ pub struct CharacteristicInfo {
 impl CharacteristicInfo {
     pub fn new(c: &Characteristic) -> Self {
         Self {
-            uuid: c.uuid.clone(),
-            service_uuid: c.service_uuid.clone(),
-            properties: c.properties.clone(),
+            uuid: c.uuid,
+            service_uuid: c.service_uuid,
+            properties: c.properties,
             characteristic_type: CHARACTERISTIC_MAP.get(&c.uuid).map(|v| &**v),
             value: None,
             decoded: None,
@@ -279,16 +278,16 @@ impl CharacteristicInfo {
     // XXX Possibly store characteristic rather than re-computing?
     fn to_characteristic(&self) -> Characteristic {
         Characteristic {
-            uuid: self.uuid.clone(),
-            service_uuid: self.service_uuid.clone(),
-            properties: self.properties.clone(),
+            uuid: self.uuid,
+            service_uuid: self.service_uuid,
+            properties: self.properties,
             descriptors: self
                 .descriptors
                 .iter()
                 .map(|d| Descriptor {
-                    uuid: d.uuid.clone(),
-                    service_uuid: self.service_uuid.clone(),
-                    characteristic_uuid: self.uuid.clone(),
+                    uuid: d.uuid,
+                    service_uuid: self.service_uuid,
+                    characteristic_uuid: self.uuid,
                 })
                 .collect::<BTreeSet<_>>(),
         }
@@ -311,7 +310,7 @@ impl std::fmt::Display for CharacteristicInfo {
                     .iter()
                     .map(|d| d.to_string())
                     .collect::<Vec<_>>()
-                    .join(",".into())
+                    .join(",")
             )?;
         }
         if let Some(t) = self.characteristic_type {
@@ -356,7 +355,7 @@ pub struct DescriptorInfo {
 impl DescriptorInfo {
     pub fn new(uuid: &Uuid) -> Self {
         Self {
-            uuid: uuid.clone(),
+            uuid: *uuid,
             descriptor_type: DESCRIPTOR_MAP.get(uuid).map(|v| &**v),
         }
     }
@@ -410,7 +409,7 @@ fn serialize_hex<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    serializer.serialize_str(&format!("{}", hex::encode(bytes)))
+    serializer.serialize_str(&hex::encode(bytes).to_string())
 }
 
 fn deserialize_hex<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -435,7 +434,7 @@ where
 {
     match bytes {
         Some(v) => {
-            let hex = format!("{}", hex::encode(v));
+            let hex = hex::encode(v).to_string();
             serializer.serialize_str(&hex)
         }
         None => serializer.serialize_none(),

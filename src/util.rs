@@ -73,12 +73,10 @@ pub fn read_all_lines(files: &[String]) -> anyhow::Result<Vec<String>> {
     let mut result = Vec::new();
     for f in files {
         let file = File::open(f)?;
-        for line in BufReader::new(file).lines() {
-            if let Ok(line) = line {
-                // Skip commands & blank lines
-                if !(line.trim().is_empty() || line.starts_with("#")) {
-                    result.push(line.trim().to_string());
-                }
+        for line in BufReader::new(file).lines().map_while(Result::ok) {
+            // Skip commands & blank lines
+            if !(line.trim().is_empty() || line.starts_with("#")) {
+                result.push(line.trim().to_string());
             }
         }
     }
@@ -128,7 +126,9 @@ where
         match tokio::time::timeout(std::time::Duration::from_secs(t), task).await {
             Ok(result) => result.map_err(|e| anyhow::anyhow!("Scan Error: {e}")),
             Err(_) => {
-                println!("\n[!] Timeout reached. Stopping scan.");
+                if !json {
+                    println!("\n[!] Timeout reached. Stopping scan.");
+                }
                 Ok(())
             }
         }

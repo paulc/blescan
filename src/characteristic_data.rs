@@ -6,17 +6,17 @@ use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub enum CharDataError {
-    ParseIntError(ParseIntError),
-    ParseFloatError(ParseFloatError),
-    FormatError(String),
+    ParseInt(ParseIntError),
+    ParseFloat(ParseFloatError),
+    Format(String),
 }
 
 impl Display for CharDataError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            CharDataError::ParseIntError(msg) => write!(f, "Invalid integer: {}", msg),
-            CharDataError::ParseFloatError(msg) => write!(f, "Invalid float: {}", msg),
-            CharDataError::FormatError(msg) => write!(f, "Invalid format: {}", msg),
+            CharDataError::ParseInt(msg) => write!(f, "Invalid integer: {}", msg),
+            CharDataError::ParseFloat(msg) => write!(f, "Invalid float: {}", msg),
+            CharDataError::Format(msg) => write!(f, "Invalid format: {}", msg),
         }
     }
 }
@@ -55,7 +55,7 @@ impl TryFrom<&str> for CharFormat {
             "f32" => Ok(CharFormat::F32),
             "f64" => Ok(CharFormat::F64),
             "utf8" => Ok(CharFormat::Utf8),
-            _ => Err(CharDataError::FormatError("Invalid Format".into())),
+            _ => Err(CharDataError::Format("Invalid Format".into())),
         }
     }
 }
@@ -111,13 +111,13 @@ chardata_from_numeric!(i8, u8, i16, u16, i32, u32, i64, u64, f32, f64);
 macro_rules! parse_int_type {
     ($value:expr, $int_type:ty) => {{
         let v = $value.trim();
-        if v.starts_with("0x") {
-            <$int_type>::from_str_radix(&v[2..], 16)
+        if let Some(v) = v.strip_prefix("0x") {
+            <$int_type>::from_str_radix(v, 16)
         } else {
-            <$int_type>::from_str_radix(v, 10)
+            v.parse::<$int_type>()
         }
         .map(|v| CharData::from(v))
-        .map_err(|e| CharDataError::ParseIntError(e))
+        .map_err(|e| CharDataError::ParseInt(e))
     }};
 }
 
@@ -129,7 +129,7 @@ impl TryFrom<&str> for CharData {
             Some((v, "bool")) => match v.to_lowercase().as_str() {
                 "true" => Ok(CharData(vec![1_u8])),
                 "false" => Ok(CharData(vec![0_u8])),
-                _ => Err(CharDataError::FormatError("Invalid Bool".into())),
+                _ => Err(CharDataError::Format("Invalid Bool".into())),
             },
             Some((v, "u8")) => parse_int_type!(v, u8),
             Some((v, "i8")) => parse_int_type!(v, i8),
@@ -141,18 +141,18 @@ impl TryFrom<&str> for CharData {
             Some((v, "i64")) => parse_int_type!(v, i64),
             Some((v, "f32")) => f32::from_str(v)
                 .map(|f| CharData(f.to_le_bytes().to_vec()))
-                .map_err(|e| CharDataError::ParseFloatError(e)),
+                .map_err(CharDataError::ParseFloat),
             Some((v, "f64")) => f64::from_str(v)
                 .map(|f| CharData(f.to_le_bytes().to_vec()))
-                .map_err(|e| CharDataError::ParseFloatError(e)),
+                .map_err(CharDataError::ParseFloat),
             Some((v, "utf8")) => Ok(CharData(v.as_bytes().to_vec())),
-            Some(_) => Err(CharDataError::FormatError("Invalid Format".into())),
+            Some(_) => Err(CharDataError::Format("Invalid Format".into())),
             None => {
                 // No format suffix - assume raw hex data (possibly with 0x prefix)
                 let v = value.strip_prefix("0x").unwrap_or(value);
                 hex::decode(v)
-                    .map(|v| CharData(v))
-                    .map_err(|e| CharDataError::FormatError(e.to_string()))
+                    .map(CharData)
+                    .map_err(|e| CharDataError::Format(e.to_string()))
             }
         }
     }
