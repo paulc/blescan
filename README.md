@@ -20,15 +20,14 @@ Supports human readable text and JSON outputs (for further filtering/processing)
 All discovery commands support:
 
 - `--name <regex>` - Filter by device name (multiple allowed)
-- `--device <uuid>` - Filter by device UUID (multiple allowed)
-- `--service <uuid>` - Filter by service UUID
-- `--characteristic <uuid>` - Filter by characteristic UUID
+- `--device <id>` - Filter by device id (multiple allowed)
+- `--service <uuid>` - Filter by service UUID (multiple allowed)
+- `--characteristic <uuid>` - Filter by characteristic UUID (multiple allowed)
 - `--rssi <dbm>` - Minimum signal strength
 - `--timeout <secs>` - Scan duration
 
-Name, Device UUID and RSSI filtering are performed on the advertisment data (so are
+Name, Device ID and RSSI filtering are performed on the advertisment data (so are
 fast), service/characteristic filters are applied after connection/enumeration.
-Note that the Device UUID is arbitrary (at least on MacOS).
 
 (Note that UUIDs can be specified as full or abbreviated BLE UUIDs - eg: `0x2a24`
 = `00002a24-0000-1000-8000-00805f9b34fb`)
@@ -135,7 +134,7 @@ Scan BLE Devices
 
 Options:
   --name            filter device name [multiple allowed]
-  --device          filter device uuid [multiple allowed]
+  --device          filter device id [multiple allowed]
   --rssi            minimum RSSI
   --timeout         scan timeout
   --json            NDJSON output
@@ -151,7 +150,7 @@ Enumerate BLE Devices
 Options:
   --read            read characteristic data
   --name            filter device name [multiple allowed]
-  --device          filter device uuid [multiple allowed]
+  --device          filter device id [multiple allowed]
   --service         filter service uuid [multiple allowed]
   --characteristic  filter characteristic uuid [multiple allowed]
   --rssi            minimum RSSI
@@ -173,7 +172,7 @@ Read service data continuously
 Options:
   --interval        read service data continuously (poll interval in s)
   --name            filter device name [multiple allowed]
-  --device          filter device uuid [multiple allowed]
+  --device          filter device id [multiple allowed]
   --service         filter service uuid [multiple allowed]
   --characteristic  filter characteristic uuid [multiple allowed]
   --rssi            minimum RSSI
@@ -192,7 +191,7 @@ Write characteristic data
 
 Options:
   --name            device name
-  --device          device uuid
+  --device          device id
   --service         service uuid
   --characteristic  write characteristic - characteristic_uuid::data[_type]
                     (will exit after all characteristics are written - in case
@@ -216,7 +215,7 @@ Subscribe/listen for notify events
 
 Options:
   --name            filter device name [multiple allowed]
-  --device          filter device uuid [multiple allowed]
+  --device          filter device id [multiple allowed]
   --service         filter service uuid [multiple allowed]
   --characteristic  filter characteristic uuid [multiple allowed]
   --rssi            minimum RSSI
@@ -235,7 +234,7 @@ Dump raw BLE advertisement data
 
 Options:
   --event           filter event type [multiple allowed]
-  --device          filter device uuid [multiple allowed]
+  --device          filter device id [multiple allowed]
   --timeout         scan timeout
   --json            NDJSON output
   --help, help      display usage information

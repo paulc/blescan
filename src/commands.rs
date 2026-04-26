@@ -55,7 +55,7 @@ pub struct ScanArgs {
     #[serde(default)]
     pub name: Vec<String>,
 
-    /// filter device uuid [multiple allowed]
+    /// filter device id [multiple allowed]
     #[argh(option)]
     #[serde(default)]
     pub device: Vec<String>,
@@ -90,7 +90,7 @@ pub struct EnumerateArgs {
     #[serde(default)]
     pub name: Vec<String>,
 
-    /// filter device uuid [multiple allowed]
+    /// filter device id [multiple allowed]
     #[argh(option)]
     #[serde(default)]
     pub device: Vec<String>,
@@ -151,7 +151,7 @@ pub struct PollArgs {
     #[serde(default)]
     pub name: Vec<String>,
 
-    /// filter device uuid [multiple allowed]
+    /// filter device id [multiple allowed]
     #[argh(option)]
     #[serde(default)]
     pub device: Vec<String>,
@@ -205,7 +205,7 @@ pub struct NotifyArgs {
     #[serde(default)]
     pub name: Vec<String>,
 
-    /// filter device uuid [multiple allowed]
+    /// filter device id [multiple allowed]
     #[argh(option)]
     #[serde(default)]
     pub device: Vec<String>,
@@ -255,7 +255,7 @@ pub struct WriteArgs {
     #[serde(default)]
     pub name: Vec<String>,
 
-    /// device uuid
+    /// device id
     #[argh(option)]
     #[serde(default)]
     pub device: Vec<String>,
@@ -303,7 +303,7 @@ pub struct DumpArgs {
     #[serde(default)]
     pub event: Vec<String>,
 
-    /// filter device uuid [multiple allowed]
+    /// filter device id [multiple allowed]
     #[argh(option)]
     #[serde(default)]
     pub device: Vec<String>,
