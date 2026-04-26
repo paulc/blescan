@@ -36,7 +36,7 @@ fast), service/characteristic filters are applied after connection/enumeration.
 
 The `dump` command supports filtering by event type and device id:
 
-- `--device <uuid>`
+- `--device <id>`
 - `--event DeviceDiscovered`
 - `--event DeviceUpdated`
 - `--event ManufacturerDataAdvertisement`
