@@ -2,6 +2,7 @@ use anyhow::{Context, anyhow};
 use btleplug::api::Manager as _;
 use btleplug::platform::Manager;
 use std::io::Read;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 mod characteristic_data;
 mod commands;
@@ -22,10 +23,12 @@ use crate::commands::*;
 use crate::util::parse_uuid; // Needed for uuid_map include
 include!(concat!(env!("OUT_DIR"), "/uuid_map.rs"));
 
-pub const ENUMERATE_TIMEOUT: u64 = 5;
-pub const CONNECT_TIMEOUT: u64 = 5;
-pub const WRITE_TIMEOUT: u64 = 5;
-pub const DISCONNECT_TIMEOUT: u64 = 1;
+// Default connection parameters
+static CONNECT_TIMEOUT: AtomicU64 = AtomicU64::new(5);
+static ENUMERATE_TIMEOUT: AtomicU64 = AtomicU64::new(5);
+static WRITE_TIMEOUT: AtomicU64 = AtomicU64::new(5);
+static DISCONNECT_TIMEOUT: AtomicU64 = AtomicU64::new(2);
+static MAX_TASKS: AtomicUsize = AtomicUsize::new(10);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -34,6 +37,24 @@ async fn main() -> anyhow::Result<()> {
 
     if args.dump_json {
         eprintln!("{}", serde_json::to_string_pretty(&args.command)?);
+        return Ok(());
+    }
+
+    // Update connection params from args
+    if let Some(t) = args.connect_timeout {
+        CONNECT_TIMEOUT.store(t, Ordering::Relaxed)
+    }
+    if let Some(t) = args.enumerate_timeout {
+        ENUMERATE_TIMEOUT.store(t, Ordering::Relaxed)
+    }
+    if let Some(t) = args.write_timeout {
+        WRITE_TIMEOUT.store(t, Ordering::Relaxed)
+    }
+    if let Some(t) = args.disconnect_timeout {
+        DISCONNECT_TIMEOUT.store(t, Ordering::Relaxed)
+    }
+    if let Some(t) = args.max_tasks {
+        MAX_TASKS.store(t, Ordering::Relaxed)
     }
 
     // Initialise Bluetooth

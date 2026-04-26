@@ -1,5 +1,7 @@
 #!/bin/sh
 
+cargo build --release
+
 printf '```\n'
 target/release/blescan --help
 printf '```\n\n'

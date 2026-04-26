@@ -4,9 +4,12 @@ use btleplug::platform::Adapter;
 use futures::StreamExt;
 use regex::Regex;
 use serde_json::json;
+use tokio::sync::Semaphore;
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
+use crate::MAX_TASKS;
 use crate::commands::NotifyArgs;
 use crate::scanner::DeviceScanner;
 use crate::types::NotificationData;
@@ -34,15 +37,20 @@ pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
             .chain(read_all_lines(&args.decode_file)?) // Read from decode_files
             .collect::<Vec<_>>(),
     )?;
+    let task_semaphore = Arc::new(Semaphore::new(MAX_TASKS.load(Ordering::Relaxed)));
+
     let scan = async {
         let json = args.json;
         let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter).await?;
         while let Some((peripheral, mut device)) = scanner.next_match().await? {
+            let task_semaphore = Arc::clone(&task_semaphore);
             tokio::spawn({
                 let service_filter = Arc::clone(&service_filter);
                 let characteristic_filter = Arc::clone(&characteristic_filter);
                 let decode_map = Arc::clone(&decode_map);
                 async move {
+                    // Limit running tasks using semaphore
+                    let _permit = task_semaphore.acquire().await?;
                     device.connect(&peripheral).await?;
                     device
                         .enumerate(&peripheral, &service_filter, &characteristic_filter)

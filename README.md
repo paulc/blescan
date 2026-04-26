@@ -71,7 +71,7 @@ be skipped). e.g.
 
 ```
 {
-  "Enumerate": {
+  "enumerate": {
     "read": true,
     "name": [],
     "device": [],
@@ -102,12 +102,19 @@ You can pass the json file from stdin using `blescan run -- -`.
 ## Usage
 
 ```
-Usage: blescan [--dump-json] <command> [<args>]
+Usage: blescan [--dump-json] [--connect-timeout <connect-timeout>] [--enumerate-timeout <enumerate-timeout>] [--write-timeout <write-timeout>] [--disconnect-timeout <disconnect-timeout>] [--max-tasks <max-tasks>] <command> [<args>]
 
 Simple BLE scanner
 
 Options:
-  --dump-json       show equivalient JSON run command
+  --dump-json       dump JSON command object and exit
+  --connect-timeout update default connect timeout (5s)
+  --enumerate-timeout
+                    update default enumerate timeout (5s)
+  --write-timeout   update default write timeout (5s)
+  --disconnect-timeout
+                    update default disconnect timeout (2s)
+  --max-tasks       update default max_tasks (10)
   --help, help      display usage information
 
 Commands:
@@ -118,6 +125,7 @@ Commands:
   notify            Subscribe/listen for notify events
   dump              Dump raw BLE advertisement data
   run               Run JSON command file
+
 ```
 
 ```

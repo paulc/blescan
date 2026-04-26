@@ -42,14 +42,14 @@ pub async fn run(central: Adapter, args: DumpArgs) -> anyhow::Result<()> {
 
     if let Some(t) = args.timeout {
         if !args.json {
-            println!("Dumping BLE advertisements: Timeout {t} secs");
+            eprintln!("Dumping BLE advertisements: Timeout {t} secs");
         }
         if timeout(Duration::from_secs(t), scan).await.is_err() && !args.json {
-            println!("[-] Timeout");
+            eprintln!("[-] Timeout");
         }
     } else {
         if !args.json {
-            println!("Dumping BLE advertisements: Ctrl+C to stop");
+            eprintln!("Dumping BLE advertisements: Ctrl+C to stop");
         }
         scan.await?;
     }

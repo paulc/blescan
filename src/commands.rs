@@ -7,14 +7,35 @@ pub struct Args {
     #[argh(subcommand)]
     pub command: Commands,
 
-    /// dump JSON command object
+    /// dump JSON command object and exit
     #[argh(switch)]
     #[serde(default, skip_serializing)]
     pub dump_json: bool,
+
+    /// update default connect timeout (5s)
+    #[argh(option)]
+    pub connect_timeout: Option<u64>,
+
+    /// update default enumerate timeout (5s)
+    #[argh(option)]
+    pub enumerate_timeout: Option<u64>,
+
+    /// update default write timeout (5s)
+    #[argh(option)]
+    pub write_timeout: Option<u64>,
+
+    /// update default disconnect timeout (2s)
+    #[argh(option)]
+    pub disconnect_timeout: Option<u64>,
+
+    /// update default max_tasks (10)
+    #[argh(option)]
+    pub max_tasks: Option<usize>,
 }
 
 #[derive(FromArgs, Debug, Serialize, Deserialize)]
 #[argh(subcommand)]
+#[serde(rename_all = "snake_case")]
 pub enum Commands {
     Scan(ScanArgs),
     Enumerate(EnumerateArgs),
@@ -121,8 +142,8 @@ pub struct EnumerateArgs {
 #[argh(subcommand, name = "poll")]
 pub struct PollArgs {
     /// read service data continuously (poll interval in s)
-    #[argh(option, default = "5.0")]
-    #[serde(default)]
+    #[argh(option, default = "default_interval()")]
+    #[serde(default = "default_interval")]
     pub interval: f64,
 
     /// filter device name [multiple allowed]
@@ -169,6 +190,10 @@ pub struct PollArgs {
     #[argh(switch)]
     #[serde(default)]
     pub json: bool,
+}
+
+fn default_interval() -> f64 {
+    5.0
 }
 
 #[derive(FromArgs, Debug, Serialize, Deserialize)]

@@ -1,6 +1,5 @@
 use btleplug::api::{
-    CharPropFlags, Characteristic, Descriptor, Peripheral as _, PeripheralProperties, Service, WriteType,
-    bleuuid::BleUuid,
+    CharPropFlags, Characteristic, Peripheral as _, PeripheralProperties, Service, WriteType, bleuuid::BleUuid,
 };
 use btleplug::platform::Peripheral;
 
@@ -9,7 +8,8 @@ use serde_json::Value;
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use crate::characteristic_data::CharFormat;
@@ -64,7 +64,12 @@ impl DeviceInfo {
         service_filter: &HashSet<Uuid>,
         characteristic_filter: &HashSet<Uuid>,
     ) -> anyhow::Result<()> {
-        match timeout(Duration::from_secs(ENUMERATE_TIMEOUT), peripheral.discover_services()).await {
+        match timeout(
+            Duration::from_secs(ENUMERATE_TIMEOUT.load(Ordering::Relaxed)),
+            peripheral.discover_services(),
+        )
+        .await
+        {
             Ok(Ok(_)) => {
                 for service in peripheral.services() {
                     if service_filter.is_empty() || service_filter.contains(&service.uuid) {
@@ -91,7 +96,11 @@ impl DeviceInfo {
     /// Connect to device (note that you need to manage connect/disconnect explicitly)
     pub async fn connect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
         if !peripheral.is_connected().await?
-            && let Err(e) = timeout(Duration::from_secs(CONNECT_TIMEOUT), peripheral.connect()).await
+            && let Err(e) = timeout(
+                Duration::from_secs(CONNECT_TIMEOUT.load(Ordering::Relaxed)),
+                peripheral.connect(),
+            )
+            .await
         {
             anyhow::bail!("Connect timeout/error for {}: {:?}", peripheral.id(), e);
         }
@@ -101,7 +110,11 @@ impl DeviceInfo {
     /// Disconnect from device (note that you need to manage connect/disconnect explicitly)
     pub async fn disconnect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
         if peripheral.is_connected().await?
-            && let Err(e) = timeout(Duration::from_secs(DISCONNECT_TIMEOUT), peripheral.disconnect()).await
+            && let Err(e) = timeout(
+                Duration::from_secs(DISCONNECT_TIMEOUT.load(Ordering::Relaxed)),
+                peripheral.disconnect(),
+            )
+            .await
         {
             anyhow::bail!("Disconnect timeout/error for {}: {:?}", peripheral.id(), e);
         }
@@ -210,6 +223,9 @@ pub struct CharacteristicInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decoded: Option<Value>,
     pub descriptors: Vec<DescriptorInfo>,
+    // Store the underlying characteristic struct for read/write/notify
+    #[serde(skip)]
+    characteristic: Characteristic,
 }
 
 impl CharacteristicInfo {
@@ -222,11 +238,12 @@ impl CharacteristicInfo {
             value: None,
             decoded: None,
             descriptors: c.descriptors.iter().map(|d| DescriptorInfo::new(&d.uuid)).collect(),
+            characteristic: c.clone(),
         }
     }
     pub async fn read(&mut self, p: &Peripheral, decode_map: &HashMap<Uuid, CharFormat>) -> anyhow::Result<()> {
         if self.properties.contains(CharPropFlags::READ) {
-            self.value = Some(p.read(&self.to_characteristic()).await?);
+            self.value = Some(p.read(&self.characteristic).await?);
             self.decoded = self
                 .value
                 .as_ref()
@@ -239,9 +256,9 @@ impl CharacteristicInfo {
             || self.properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
         {
             match timeout(
-                Duration::from_secs(WRITE_TIMEOUT),
+                Duration::from_secs(WRITE_TIMEOUT.load(Ordering::Relaxed)),
                 p.write(
-                    &self.to_characteristic(),
+                    &self.characteristic,
                     value,
                     if self.properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE) || without_response {
                         WriteType::WithoutResponse
@@ -262,7 +279,7 @@ impl CharacteristicInfo {
     }
     pub async fn subscribe(&mut self, peripheral: &Peripheral) -> anyhow::Result<Option<SubscriptionInfo>> {
         if self.properties.contains(CharPropFlags::NOTIFY) || self.properties.contains(CharPropFlags::INDICATE) {
-            peripheral.subscribe(&self.to_characteristic()).await?;
+            peripheral.subscribe(&self.characteristic).await?;
             Ok(Some(SubscriptionInfo {
                 device: parse_uuid(&peripheral.id().to_string())?,
                 service: self.service_uuid,
@@ -270,23 +287,6 @@ impl CharacteristicInfo {
             }))
         } else {
             Ok(None)
-        }
-    }
-    // XXX Possibly store characteristic rather than re-computing?
-    fn to_characteristic(&self) -> Characteristic {
-        Characteristic {
-            uuid: self.uuid,
-            service_uuid: self.service_uuid,
-            properties: self.properties,
-            descriptors: self
-                .descriptors
-                .iter()
-                .map(|d| Descriptor {
-                    uuid: d.uuid,
-                    service_uuid: self.service_uuid,
-                    characteristic_uuid: self.uuid,
-                })
-                .collect::<BTreeSet<_>>(),
         }
     }
 }

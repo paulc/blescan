@@ -46,7 +46,7 @@ impl DeviceScanner {
     /// Pull the next event and returns it if it passes all device filters
     pub async fn next_match(&mut self) -> anyhow::Result<Option<(Peripheral, DeviceInfo)>> {
         while let Some(event) = self.events.next().await {
-            if let CentralEvent::DeviceDiscovered(id) = event {
+            if let CentralEvent::DeviceDiscovered(id) | CentralEvent::DeviceUpdated(id) = event {
                 if self.seen.contains(&id) {
                     continue;
                 }

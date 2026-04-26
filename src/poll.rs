@@ -1,10 +1,13 @@
 use anyhow::Context;
 use btleplug::platform::Adapter;
 use regex::Regex;
+use tokio::sync::Semaphore;
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use crate::MAX_TASKS;
 use crate::commands::PollArgs;
 use crate::scanner::DeviceScanner;
 use crate::util::{parse_decoder, parse_uuid, read_all_lines, run_with_timeout, uuid_filter};
@@ -31,16 +34,21 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
             .chain(read_all_lines(&args.decode_file)?) // Read from decode_files
             .collect::<Vec<_>>(),
     )?;
+    let task_semaphore = Arc::new(Semaphore::new(MAX_TASKS.load(Ordering::Relaxed)));
+
     let scan = async {
         let json = args.json;
         let interval = args.interval;
         let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter).await?;
         while let Some((peripheral, mut device)) = scanner.next_match().await? {
             tokio::spawn({
+                let task_semaphore = Arc::clone(&task_semaphore);
                 let service_filter = Arc::clone(&service_filter);
                 let characteristic_filter = Arc::clone(&characteristic_filter);
                 let decode_map = Arc::clone(&decode_map);
                 async move {
+                    // Limit running tasks using semaphore
+                    let _permit = task_semaphore.acquire().await?;
                     device.connect(&peripheral).await?;
                     device
                         .enumerate(&peripheral, &service_filter, &characteristic_filter)

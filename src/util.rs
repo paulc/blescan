@@ -149,20 +149,20 @@ where
 {
     if let Some(t) = timeout_secs {
         if !json {
-            println!("Listening for BLE advertisements: Timeout {t} secs");
+            eprintln!("Listening for BLE advertisements: Timeout {t} secs");
         }
         match tokio::time::timeout(std::time::Duration::from_secs(t), task).await {
             Ok(result) => result.map_err(|e| anyhow::anyhow!("Scan Error: {e}")),
             Err(_) => {
                 if !json {
-                    println!("\n[!] Timeout reached. Stopping scan.");
+                    eprintln!("\n[!] Timeout reached. Stopping scan.");
                 }
                 Ok(())
             }
         }
     } else {
         if !json {
-            println!("Listening for BLE advertisements: Ctrl+C to stop");
+            eprintln!("Listening for BLE advertisements: Ctrl+C to stop");
         }
         task.await.map_err(|e| anyhow::anyhow!("Scan Error: {e}"))
     }
