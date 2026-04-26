@@ -19,7 +19,7 @@ use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, WRITE_TIMEOU
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DeviceInfo {
-    pub id: Uuid,
+    pub id: String, // UUID on MAcOS but MAC accress on Win/Linux,
     pub name: String,
     pub rssi: i16,
     pub services: HashMap<Uuid, ServiceInfo>,
@@ -29,7 +29,7 @@ impl DeviceInfo {
     /// Create device from advertisment
     pub async fn new(p: &Peripheral) -> anyhow::Result<Self> {
         let properties = p.properties().await?.unwrap_or_default();
-        let id = parse_uuid(&p.id().to_string())?; // Uuid is private so have to parse 
+        let id = p.id().to_string(); // Uuid is private so have to parse 
         let name = properties.local_name.clone().unwrap_or_else(|| "Unknown".to_string());
         let rssi = properties.rssi.unwrap_or(0);
         // Read basic service data from the advertisment

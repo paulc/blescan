@@ -3,7 +3,6 @@ use btleplug::platform::{Adapter, Peripheral, PeripheralId};
 use futures::Stream;
 use futures::stream::StreamExt;
 use regex::Regex;
-use uuid::Uuid;
 
 use std::collections::HashSet;
 use std::pin::Pin;
@@ -17,7 +16,7 @@ pub struct DeviceScanner {
     seen: HashSet<PeripheralId>,
     rssi_filter: Option<i16>,
     name_filter: Vec<Regex>,
-    device_filter: Vec<Uuid>,
+    device_filter: Vec<String>,
 }
 
 impl DeviceScanner {
@@ -26,7 +25,7 @@ impl DeviceScanner {
         central: Adapter,
         rssi_filter: Option<i16>,
         name_filter: Vec<Regex>,
-        device_filter: Vec<Uuid>,
+        device_filter: Vec<String>,
     ) -> anyhow::Result<Self> {
         // ScanFilter only checks for services in the Advertisement payload
         // rather then the full list of GATT services (which need connection)
@@ -50,13 +49,13 @@ impl DeviceScanner {
                 if self.seen.contains(&id) {
                     continue;
                 }
-                self.seen.insert(id.clone());
                 if let Ok(peripheral) = self.central.peripheral(&id).await
                     && let Ok(device) = DeviceInfo::new(&peripheral).await
                     && self.rssi_filter.is_none_or(|rssi| device.rssi >= rssi)
                     && (self.name_filter.is_empty() || self.name_filter.iter().any(|r| r.is_match(&device.name)))
                     && (self.device_filter.is_empty() || self.device_filter.contains(&device.id))
                 {
+                    self.seen.insert(id.clone());
                     return Ok(Some((peripheral, device)));
                 }
             }

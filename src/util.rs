@@ -1,5 +1,6 @@
 use anyhow::Context;
 use btleplug::api::CharPropFlags;
+use regex::Regex;
 use serde::Serializer;
 use uuid::Uuid;
 
@@ -87,7 +88,15 @@ pub fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
     }
 }
 
-pub fn uuid_filter(filters: &[String]) -> anyhow::Result<Arc<HashSet<Uuid>>> {
+pub fn make_regex_filter(filters: &[String]) -> anyhow::Result<Vec<Regex>> {
+    filters
+        .iter()
+        .map(|s| Regex::new(s))
+        .collect::<Result<Vec<_>, _>>()
+        .context("Error parsing Regex")
+}
+
+pub fn make_uuid_filter(filters: &[String]) -> anyhow::Result<Arc<HashSet<Uuid>>> {
     Ok(Arc::new(
         filters
             .iter()
@@ -95,6 +104,12 @@ pub fn uuid_filter(filters: &[String]) -> anyhow::Result<Arc<HashSet<Uuid>>> {
             .collect::<Result<HashSet<Uuid>, _>>()
             .context("Error Parsing UUID")?,
     ))
+}
+
+pub fn make_decode_map(decode: &[String], decode_file: &[String]) -> anyhow::Result<Arc<HashMap<Uuid, CharFormat>>> {
+    let mut rules: Vec<String> = decode.iter().cloned().collect();
+    rules.extend(read_all_lines(decode_file)?);
+    Ok(Arc::new(parse_decoder(&rules)?))
 }
 
 pub fn read_all_lines(files: &[String]) -> anyhow::Result<Vec<String>> {
@@ -111,20 +126,18 @@ pub fn read_all_lines(files: &[String]) -> anyhow::Result<Vec<String>> {
     Ok(result)
 }
 
-pub fn parse_decoder(decoders: &[String]) -> anyhow::Result<Arc<HashMap<Uuid, CharFormat>>> {
-    Ok(Arc::new(
-        decoders
-            .iter()
-            .map(|s| {
-                s.split_once("::").context("Invalid Format").and_then(|(uuid, fmt)| {
-                    let uuid = parse_uuid(uuid)?;
-                    let fmt = CharFormat::try_from(fmt)?;
-                    Ok((uuid, fmt))
-                })
+pub fn parse_decoder(decoders: &[String]) -> anyhow::Result<HashMap<Uuid, CharFormat>> {
+    Ok(decoders
+        .iter()
+        .map(|s| {
+            s.split_once("::").context("Invalid Format").and_then(|(uuid, fmt)| {
+                let uuid = parse_uuid(uuid)?;
+                let fmt = CharFormat::try_from(fmt)?;
+                Ok((uuid, fmt))
             })
-            .collect::<Result<HashMap<_, _>, _>>()
-            .context("Error Parsing Decode Mapping")?,
-    ))
+        })
+        .collect::<Result<HashMap<_, _>, _>>()
+        .context("Error Parsing Decode Mapping")?)
 }
 
 pub fn parse_write(characteristics: &[String]) -> anyhow::Result<Arc<HashMap<Uuid, Vec<u8>>>> {

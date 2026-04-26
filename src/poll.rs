@@ -1,6 +1,4 @@
-use anyhow::Context;
 use btleplug::platform::Adapter;
-use regex::Regex;
 use tokio::sync::Semaphore;
 
 use std::sync::Arc;
@@ -10,30 +8,14 @@ use std::time::Duration;
 use crate::MAX_TASKS;
 use crate::commands::PollArgs;
 use crate::scanner::DeviceScanner;
-use crate::util::{parse_decoder, parse_uuid, read_all_lines, run_with_timeout, uuid_filter};
+use crate::util::{make_decode_map, make_regex_filter, make_uuid_filter, run_with_timeout};
 
 pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
-    let device_filter = args
-        .device
-        .iter()
-        .map(|s| parse_uuid(s))
-        .collect::<Result<Vec<_>, _>>()
-        .context("Error Parsing Device UUID")?;
-    let name_filter = args
-        .name
-        .iter()
-        .map(|s| Regex::new(s))
-        .collect::<Result<Vec<_>, _>>()
-        .context("Error parsing name regex")?;
-    let service_filter = uuid_filter(&args.service)?;
-    let characteristic_filter = uuid_filter(&args.characteristic)?;
-    let decode_map = parse_decoder(
-        &args
-            .decode
-            .into_iter()
-            .chain(read_all_lines(&args.decode_file)?) // Read from decode_files
-            .collect::<Vec<_>>(),
-    )?;
+    let device_filter = args.device;
+    let name_filter = make_regex_filter(&args.name)?;
+    let service_filter = make_uuid_filter(&args.service)?;
+    let characteristic_filter = make_uuid_filter(&args.characteristic)?;
+    let decode_map = make_decode_map(&args.decode, &args.decode_file)?;
     let task_semaphore = Arc::new(Semaphore::new(MAX_TASKS.load(Ordering::Relaxed)));
 
     let scan = async {

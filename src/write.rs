@@ -1,6 +1,5 @@
 use anyhow::Context;
 use btleplug::platform::Adapter;
-use regex::Regex;
 use serde::Serialize;
 use serde_json::json;
 use tokio::sync::Semaphore;
@@ -14,7 +13,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use crate::MAX_TASKS;
 use crate::commands::WriteArgs;
 use crate::scanner::DeviceScanner;
-use crate::util::{parse_uuid, parse_write, run_with_timeout, uuid_filter};
+use crate::util::{make_regex_filter, make_uuid_filter, parse_write, run_with_timeout};
 
 #[derive(Debug, Clone, Serialize)]
 struct WriteStatus {
@@ -34,19 +33,9 @@ impl std::fmt::Display for WriteStatus {
 }
 
 pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
-    let device_filter = args
-        .device
-        .iter()
-        .map(|s| parse_uuid(s))
-        .collect::<Result<Vec<_>, _>>()
-        .context("Error Parsing Device UUID")?;
-    let name_filter = args
-        .name
-        .iter()
-        .map(|s| Regex::new(s))
-        .collect::<Result<Vec<_>, _>>()
-        .context("Error parsing name regex")?;
-    let service_filter = uuid_filter(&args.service)?;
+    let device_filter = args.device;
+    let name_filter = make_regex_filter(&args.name)?;
+    let service_filter = make_uuid_filter(&args.service)?;
     let write_map = parse_write(&args.characteristic)?;
     let characteristic_filter = Arc::new(write_map.keys().cloned().collect::<HashSet<Uuid>>());
 

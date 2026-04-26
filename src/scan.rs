@@ -1,24 +1,12 @@
-use anyhow::Context;
 use btleplug::platform::Adapter;
-use regex::Regex;
 
 use crate::commands::ScanArgs;
 use crate::scanner::DeviceScanner;
-use crate::util::{parse_uuid, run_with_timeout};
+use crate::util::{make_regex_filter, run_with_timeout};
 
 pub async fn run(central: Adapter, args: ScanArgs) -> anyhow::Result<()> {
-    let device_filter = args
-        .device
-        .iter()
-        .map(|s| parse_uuid(s))
-        .collect::<Result<Vec<_>, _>>()
-        .context("Error Parsing Device UUID")?;
-    let name_filter = args
-        .name
-        .iter()
-        .map(|s| Regex::new(s))
-        .collect::<Result<Vec<_>, _>>()
-        .context("Error parsing name regex")?;
+    let device_filter = args.device;
+    let name_filter = make_regex_filter(&args.name)?;
     let scan = async {
         let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter).await?;
         while let Some((_peripheral, device)) = scanner.next_match().await? {
