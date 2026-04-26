@@ -1,7 +1,8 @@
 # blescan
 
-A simple BLE scanner and debugging tool (using the `btleplug` Rust crate). 
-Supports human readable text and JSON outputs (for further filtering/processing).
+A simple command-line BLE scanner and debugging tool (using the `btleplug` Rust
+crate).  Supports human readable text and JSON outputs (for further
+filtering/processing).
 
 ## Commands
 
