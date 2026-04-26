@@ -88,7 +88,7 @@ impl CharData {
     pub fn new(data: &[u8]) -> Self {
         Self(data.to_vec())
     }
-    pub fn to_vec(&self) -> &Vec<u8> {
+    pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
 }

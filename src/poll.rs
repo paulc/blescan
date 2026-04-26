@@ -36,21 +36,25 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
                         .enumerate(&peripheral, &service_filter, &characteristic_filter)
                         .await?;
                     let mut ticker = tokio::time::interval(Duration::from_millis((interval * 1000.0) as u64));
-                    let e = {
-                        // First tick returns immediately
-                        loop {
-                            ticker.tick().await;
-                            if let Err(e) = device.read(&peripheral, &decode_map).await {
-                                break e;
-                            };
-                            if json {
-                                println!("{}", serde_json::to_string(&device).unwrap())
-                            } else {
-                                print!("[+] Device: {}", device)
+                    if (service_filter.is_empty() && characteristic_filter.is_empty()) || !device.services.is_empty() {
+                        let e = {
+                            // First tick returns immediately
+                            loop {
+                                ticker.tick().await;
+                                if let Err(e) = device.read(&peripheral, &decode_map).await {
+                                    break e;
+                                };
+                                if json {
+                                    println!("{}", serde_json::to_string(&device).unwrap())
+                                } else {
+                                    print!("[+] Device: {}", device)
+                                }
                             }
-                        }
-                    };
-                    Err::<(), anyhow::Error>(e)
+                        };
+                        Err::<(), anyhow::Error>(e)
+                    } else {
+                        Ok::<(), anyhow::Error>(())
+                    }
                 }
             });
         }

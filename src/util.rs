@@ -147,7 +147,7 @@ pub fn parse_write(characteristics: &[String]) -> anyhow::Result<Arc<HashMap<Uui
             .map(|s| {
                 s.split_once("::").context("Invalid Format").and_then(|(uuid, data)| {
                     let uuid = parse_uuid(uuid)?;
-                    let data = CharData::try_from(data)?.to_vec().clone();
+                    let data = CharData::try_from(data)?.as_slice().to_vec();
                     Ok((uuid, data))
                 })
             })

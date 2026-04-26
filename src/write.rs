@@ -101,8 +101,9 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                         Ok::<(), anyhow::Error>(())
                                     }.await;
                                     let _ = device.disconnect(&peripheral).await;
-                                    if let Err(e) = result {
-                                        eprintln!("Write Error: {}", e)
+                                    if let Err(_e) = result {
+                                        // Ignore connect/timeout errors (likely to be other devices timing out)
+                                        // eprintln!("Write Error: {}", e)
                                     }
                                     Ok::<(), anyhow::Error>(())
                                 }
