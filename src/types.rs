@@ -191,17 +191,30 @@ impl ServiceInfo {
 
 impl std::fmt::Display for ServiceInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
-            f,
-            "    └─ Service: {} {}({} characteristics)",
-            self.uuid.to_short_string(),
-            if let Some(t) = self.service_type {
-                format!(" [{}] ", t)
-            } else {
-                "".to_string()
-            },
-            self.characteristics.len()
-        )?;
+        if self.characteristics.is_empty() {
+            writeln!(
+                f,
+                "    └─ Service: {} {}",
+                self.uuid.to_short_string(),
+                if let Some(t) = self.service_type {
+                    format!(" [{}] ", t)
+                } else {
+                    "".to_string()
+                },
+            )?;
+        } else {
+            writeln!(
+                f,
+                "    └─ Service: {} {}({} characteristics)",
+                self.uuid.to_short_string(),
+                if let Some(t) = self.service_type {
+                    format!(" [{}] ", t)
+                } else {
+                    "".to_string()
+                },
+                self.characteristics.len()
+            )?;
+        }
         for c in self.characteristics.values() {
             write!(f, "{}", c)?;
         }
