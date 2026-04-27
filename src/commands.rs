@@ -44,6 +44,17 @@ pub enum Commands {
     Notify(NotifyArgs),
     Dump(DumpArgs),
     Run(RunArgs),
+    Monitor(MonitorArgs),
+}
+
+#[derive(FromArgs, Debug, Serialize, Deserialize)]
+/// monitor BLE devives
+#[argh(subcommand, name = "monitor")]
+pub struct MonitorArgs {
+    /// scan timeout
+    #[argh(option)]
+    #[serde(default)]
+    pub timeout: Option<u64>,
 }
 
 #[derive(FromArgs, Debug, Serialize, Deserialize)]

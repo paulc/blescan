@@ -9,6 +9,7 @@ mod commands;
 mod dump;
 mod enumerate;
 mod event;
+mod monitor;
 mod notify;
 mod poll;
 mod scan;
@@ -73,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Notify(args) => notify::run(central, args).await?,
         Commands::Write(args) => write::run(central, args).await?,
         Commands::Dump(args) => dump::run(central, args).await?,
+        Commands::Monitor(args) => monitor::run(central, args).await?,
         // Load command file and run
         Commands::Run(args) => match read_json_command(&args.path)? {
             Commands::Scan(args) => scan::run(central, args).await?,
@@ -81,7 +83,8 @@ async fn main() -> anyhow::Result<()> {
             Commands::Notify(args) => notify::run(central, args).await?,
             Commands::Write(args) => write::run(central, args).await?,
             Commands::Dump(args) => dump::run(central, args).await?,
-            Commands::Run(_) => anyhow::bail!("Invalid JSON command file: <Run> not allowed"),
+            Commands::Run(_) => anyhow::bail!("Invalid JSON command file: <run> not allowed"),
+            Commands::Monitor(_) => anyhow::bail!("Invalid JSON command file: <monitorun> not allowed"),
         },
     }
 
