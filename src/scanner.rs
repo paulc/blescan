@@ -17,6 +17,7 @@ pub struct DeviceScanner {
     rssi_filter: Option<i16>,
     name_filter: Vec<Regex>,
     device_filter: Vec<String>,
+    filter_seen: bool,
 }
 
 impl DeviceScanner {
@@ -26,6 +27,7 @@ impl DeviceScanner {
         rssi_filter: Option<i16>,
         name_filter: Vec<Regex>,
         device_filter: Vec<String>,
+        filter_seen: bool,
     ) -> anyhow::Result<Self> {
         // ScanFilter only checks for services in the Advertisement payload
         // rather then the full list of GATT services (which need connection)
@@ -39,6 +41,7 @@ impl DeviceScanner {
             rssi_filter,
             name_filter,
             device_filter,
+            filter_seen,
         })
     }
 
@@ -51,11 +54,19 @@ impl DeviceScanner {
                 }
                 if let Ok(peripheral) = self.central.peripheral(&id).await
                     && let Ok(device) = DeviceInfo::new(&peripheral).await
-                    && self.rssi_filter.is_none_or(|rssi| device.rssi >= rssi)
-                    && (self.name_filter.is_empty() || self.name_filter.iter().any(|r| r.is_match(&device.name)))
+                    && self
+                        .rssi_filter
+                        .is_none_or(|rssi_min| device.rssi.is_some_and(|rssi| rssi >= rssi_min))
+                    && (self.name_filter.is_empty()
+                        || device
+                            .name
+                            .clone()
+                            .is_some_and(|name| self.name_filter.iter().any(|r| r.is_match(&name))))
                     && (self.device_filter.is_empty() || self.device_filter.contains(&device.id))
                 {
-                    self.seen.insert(id.clone());
+                    if self.filter_seen {
+                        self.seen.insert(id.clone());
+                    }
                     return Ok(Some((peripheral, device)));
                 }
             }

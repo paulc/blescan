@@ -1,4 +1,5 @@
 use anyhow::Context;
+use btleplug::api::bleuuid::BleUuid;
 use btleplug::platform::Adapter;
 use serde::Serialize;
 use serde_json::json;
@@ -16,18 +17,35 @@ use crate::scanner::DeviceScanner;
 use crate::util::{make_regex_filter, make_uuid_filter, parse_write, run_with_timeout};
 
 #[derive(Debug, Clone, Serialize)]
-struct WriteStatus {
-    uuid: Uuid,
+struct WriteStatus<'a> {
+    device: &'a str,
+    service: &'a Uuid,
+    characteristic: &'a Uuid,
+    data: &'a Vec<u8>,
     status: bool,
     error: Option<String>,
 }
 
-impl std::fmt::Display for WriteStatus {
+impl<'a> std::fmt::Display for WriteStatus<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ref error) = self.error {
-            write!(f, "[-] Write Error: {} [{}]", self.uuid, error)
+            write!(
+                f,
+                "[-] Write Error: Device: {}\n                   └─ Service: {}\n                      └─ Characteristic: {} [{}]",
+                self.device,
+                self.service.to_short_string(),
+                self.characteristic.to_short_string(),
+                error
+            )
         } else {
-            write!(f, "[+] Write Successful: {}", self.uuid)
+            write!(
+                f,
+                "[+] Write Successful: Device: {}\n                      └─ Service: {}\n                         └─ Characteristic: {} [{}]",
+                self.device,
+                self.service.to_short_string(),
+                self.characteristic.to_short_string(),
+                hex::encode(self.data)
+            )
         }
     }
 }
@@ -47,7 +65,7 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
 
     let scan = async {
         let json = args.json;
-        let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter).await?;
+        let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter, true).await?;
         loop {
             tokio::select! {
                 _ = rx.recv() => {
@@ -74,13 +92,28 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                             .await?;
                                         for service in device.services.values_mut() {
                                             for (uuid,characteristic) in &mut service.characteristics {
+                                                let data = write_map.get(uuid).context(format!("Write data not found: {}", uuid))?;
                                                 let status = match characteristic.write(
                                                         &peripheral,
                                                         args.without_response,
-                                                        write_map.get(uuid).context(format!("Write data not found: {}", uuid))?
+                                                        data
                                                     ).await {
-                                                        Ok(_) => WriteStatus { uuid: *uuid, status: true, error: None },
-                                                        Err(e) => WriteStatus { uuid: *uuid, status: false, error: Some(e.to_string()) }
+                                                        Ok(_) => WriteStatus {
+                                                            device: &device.id,
+                                                            service: &service.uuid,
+                                                            characteristic: uuid,
+                                                            data: data,
+                                                            status: true,
+                                                            error: None
+                                                        },
+                                                        Err(e) => WriteStatus {
+                                                            device: &device.id,
+                                                            service: &service.uuid,
+                                                            characteristic: uuid,
+                                                            data: data,
+                                                            status: false,
+                                                            error: Some(e.to_string())
+                                                        }
                                                     };
                                                 if json {
                                                     println!("{}", serde_json::to_string(

@@ -21,7 +21,7 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
     let scan = async {
         let json = args.json;
         let interval = args.interval;
-        let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter).await?;
+        let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter, true).await?;
         while let Some((peripheral, mut device)) = scanner.next_match().await? {
             tokio::spawn({
                 let task_semaphore = Arc::clone(&task_semaphore);

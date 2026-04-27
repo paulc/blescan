@@ -70,6 +70,11 @@ pub struct ScanArgs {
     #[serde(default)]
     pub timeout: Option<u64>,
 
+    /// show seen devices
+    #[argh(switch)]
+    #[serde(default)]
+    pub show_seen: bool,
+
     /// NDJSON output
     #[argh(switch)]
     #[serde(default)]
@@ -307,6 +312,11 @@ pub struct DumpArgs {
     #[argh(option)]
     #[serde(default)]
     pub device: Vec<String>,
+
+    /// filter device name [multiple allowed]
+    #[argh(option)]
+    #[serde(default)]
+    pub name: Vec<String>,
 
     /// scan timeout
     #[argh(option)]

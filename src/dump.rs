@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use crate::event::{EventFilter, EventWrapper};
+use crate::util::make_regex_filter;
 
 pub async fn run(central: Adapter, args: DumpArgs) -> anyhow::Result<()> {
     let event_filter = args
@@ -15,6 +16,7 @@ pub async fn run(central: Adapter, args: DumpArgs) -> anyhow::Result<()> {
         .iter()
         .map(|s| EventFilter::try_from(s.as_str()))
         .collect::<Result<HashSet<_>, _>>()?;
+    let name_filter = make_regex_filter(&args.name)?;
 
     central.start_scan(ScanFilter::default()).await?;
 
@@ -31,6 +33,14 @@ pub async fn run(central: Adapter, args: DumpArgs) -> anyhow::Result<()> {
                 continue;
             }
             let event_info = event.get_event_info(&central).await?;
+            // Name filter
+            if !name_filter.is_empty()
+                && !event_info
+                    .get_name()
+                    .is_some_and(|name| name_filter.iter().any(|r| r.is_match(name)))
+            {
+                continue;
+            }
             if args.json {
                 println!("{}", serde_json::to_string(&event_info)?);
             } else {

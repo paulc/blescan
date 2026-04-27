@@ -8,7 +8,7 @@ use serde_json::Value;
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -19,19 +19,19 @@ use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, WRITE_TIMEOU
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DeviceInfo {
-    pub id: String, // UUID on MAcOS but MAC accress on Win/Linux,
-    pub name: String,
-    pub rssi: i16,
-    pub services: HashMap<Uuid, ServiceInfo>,
+    pub id: String, // UUID on MacOS but MAC accress on Win/Linux,
+    pub name: Option<String>,
+    pub rssi: Option<i16>,
+    pub services: BTreeMap<Uuid, ServiceInfo>,
 }
 
 impl DeviceInfo {
     /// Create device from advertisment
     pub async fn new(p: &Peripheral) -> anyhow::Result<Self> {
         let properties = p.properties().await?.unwrap_or_default();
-        let id = p.id().to_string(); // Uuid is private so have to parse 
-        let name = properties.local_name.clone().unwrap_or_else(|| "Unknown".to_string());
-        let rssi = properties.rssi.unwrap_or(0);
+        let id = p.id().to_string();
+        let name = properties.local_name;
+        let rssi = properties.rssi;
         // Read basic service data from the advertisment
         // but this may miss some services (only advertised
         // intermittently)
@@ -44,11 +44,11 @@ impl DeviceInfo {
                     ServiceInfo {
                         uuid,
                         service_type: SERVICE_MAP.get(&uuid).map(|v| &**v),
-                        characteristics: HashMap::new(),
+                        characteristics: BTreeMap::new(),
                     },
                 )
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<BTreeMap<_, _>>();
         Ok(DeviceInfo {
             id,
             name,
@@ -123,7 +123,7 @@ impl DeviceInfo {
 
     /// Update RSSI
     pub async fn update_rssi(&mut self, peripheral: &Peripheral) {
-        if let Ok(Some(PeripheralProperties { rssi: Some(rssi), .. })) = peripheral.properties().await {
+        if let Ok(Some(PeripheralProperties { rssi, .. })) = peripheral.properties().await {
             self.rssi = rssi;
         }
     }
@@ -163,7 +163,16 @@ impl DeviceInfo {
 
 impl std::fmt::Display for DeviceInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{} | {} | {} dBm", self.id, self.name, self.rssi)?;
+        writeln!(
+            f,
+            "{} | {} | {} dBm",
+            self.id,
+            match self.name {
+                Some(ref s) => s.as_str(),
+                None => "Unknown",
+            },
+            self.rssi.unwrap_or(0)
+        )?;
         for s in &self.services {
             write!(f, "{}", s.1)?;
         }
@@ -176,7 +185,7 @@ pub struct ServiceInfo {
     pub uuid: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_type: Option<&'static str>,
-    pub characteristics: HashMap<Uuid, CharacteristicInfo>,
+    pub characteristics: BTreeMap<Uuid, CharacteristicInfo>,
 }
 
 impl ServiceInfo {
@@ -184,7 +193,7 @@ impl ServiceInfo {
         Self {
             uuid: s.uuid,
             service_type: SERVICE_MAP.get(&s.uuid).copied(),
-            characteristics: HashMap::new(),
+            characteristics: BTreeMap::new(),
         }
     }
 }

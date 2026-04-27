@@ -29,7 +29,7 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
     let scan = async {
         let json = args.json;
         let read = args.read;
-        let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter).await?;
+        let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter, true).await?;
         loop {
             tokio::select! {
                 _ = rx.recv() => {

@@ -8,7 +8,7 @@ pub async fn run(central: Adapter, args: ScanArgs) -> anyhow::Result<()> {
     let device_filter = args.device;
     let name_filter = make_regex_filter(&args.name)?;
     let scan = async {
-        let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter).await?;
+        let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter, !args.show_seen).await?;
         while let Some((_peripheral, device)) = scanner.next_match().await? {
             if args.json {
                 println!("{}", serde_json::to_string(&device)?);

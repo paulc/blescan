@@ -135,6 +135,17 @@ pub enum EventInfo {
     },
 }
 
+impl EventInfo {
+    pub fn get_name(&self) -> Option<&str> {
+        match self {
+            EventInfo::DeviceEvent { device, .. }
+            | EventInfo::ManufacturerDataAdvertisement { device, .. }
+            | EventInfo::ServiceDataAdvertisement { device, .. } => device.name.as_deref(),
+            EventInfo::StateUpdate { .. } => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ServiceData {
     service_id: Uuid,
