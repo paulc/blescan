@@ -14,15 +14,17 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use crate::MAX_TASKS;
 use crate::commands::WriteArgs;
 use crate::scanner::DeviceScanner;
-use crate::util::{make_regex_filter, make_uuid_filter, parse_write, run_with_timeout};
+use crate::util::{make_regex_filter, make_uuid_filter, parse_write, run_with_timeout, serialize_hex};
 
 #[derive(Debug, Clone, Serialize)]
 struct WriteStatus<'a> {
     device: &'a str,
     service: &'a Uuid,
     characteristic: &'a Uuid,
+    #[serde(serialize_with = "serialize_hex")]
     data: &'a Vec<u8>,
     status: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
@@ -102,7 +104,7 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                                             device: &device.id,
                                                             service: &service.uuid,
                                                             characteristic: uuid,
-                                                            data: data,
+                                                            data,
                                                             status: true,
                                                             error: None
                                                         },
@@ -110,7 +112,7 @@ pub async fn run(central: Adapter, args: WriteArgs) -> anyhow::Result<()> {
                                                             device: &device.id,
                                                             service: &service.uuid,
                                                             characteristic: uuid,
-                                                            data: data,
+                                                            data,
                                                             status: false,
                                                             error: Some(e.to_string())
                                                         }

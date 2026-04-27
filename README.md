@@ -129,7 +129,7 @@ Commands:
 ```
 
 ```
-Usage: blescan scan [--name <name...>] [--device <device...>] [--rssi <rssi>] [--timeout <timeout>] [--json]
+Usage: blescan scan [--name <name...>] [--device <device...>] [--rssi <rssi>] [--timeout <timeout>] [--show-seen] [--json]
 
 Scan BLE Devices
 
@@ -138,6 +138,7 @@ Options:
   --device          filter device id [multiple allowed]
   --rssi            minimum RSSI
   --timeout         scan timeout
+  --show-seen       show seen devices
   --json            NDJSON output
   --help, help      display usage information
 
@@ -229,13 +230,14 @@ Options:
 ```
 
 ```
-Usage: blescan dump [--event <event...>] [--device <device...>] [--timeout <timeout>] [--json]
+Usage: blescan dump [--event <event...>] [--device <device...>] [--name <name...>] [--timeout <timeout>] [--json]
 
 Dump raw BLE advertisement data
 
 Options:
   --event           filter event type [multiple allowed]
   --device          filter device id [multiple allowed]
+  --name            filter device name [multiple allowed]
   --timeout         scan timeout
   --json            NDJSON output
   --help, help      display usage information
