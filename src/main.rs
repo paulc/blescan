@@ -1,4 +1,4 @@
-use anyhow::{Context, anyhow};
+use anyhow::{anyhow, Context};
 use btleplug::api::Manager as _;
 use btleplug::platform::Manager;
 use std::io::Read;
@@ -17,6 +17,7 @@ mod scanner;
 mod types;
 mod util;
 mod write;
+mod write_read;
 
 use crate::commands::*;
 
@@ -73,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Poll(args) => poll::run(central, args).await?,
         Commands::Notify(args) => notify::run(central, args).await?,
         Commands::Write(args) => write::run(central, args).await?,
+        Commands::WriteRead(args) => write_read::run(central, args).await?,
         Commands::Dump(args) => dump::run(central, args).await?,
         Commands::Monitor(args) => monitor::run(central, args).await?,
         // Load command file and run
@@ -82,6 +84,7 @@ async fn main() -> anyhow::Result<()> {
             Commands::Poll(args) => poll::run(central, args).await?,
             Commands::Notify(args) => notify::run(central, args).await?,
             Commands::Write(args) => write::run(central, args).await?,
+            Commands::WriteRead(args) => write_read::run(central, args).await?,
             Commands::Dump(args) => dump::run(central, args).await?,
             Commands::Run(_) => anyhow::bail!("Invalid JSON command file: <run> not allowed"),
             Commands::Monitor(_) => anyhow::bail!("Invalid JSON command file: <monitorun> not allowed"),

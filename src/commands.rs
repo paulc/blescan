@@ -41,6 +41,7 @@ pub enum Commands {
     Enumerate(EnumerateArgs),
     Poll(PollArgs),
     Write(WriteArgs),
+    WriteRead(WriteReadArgs),
     Notify(NotifyArgs),
     Dump(DumpArgs),
     Run(RunArgs),
@@ -303,6 +304,69 @@ pub struct WriteArgs {
     #[argh(switch)]
     #[serde(default)]
     pub without_response: bool,
+
+    /// NDJSON output
+    #[argh(switch)]
+    #[serde(default)]
+    pub json: bool,
+}
+
+#[derive(FromArgs, Debug, Serialize, Deserialize)]
+/// Write characteristic data and then read response
+#[argh(subcommand, name = "write-read")]
+pub struct WriteReadArgs {
+    /// device name
+    #[argh(option)]
+    #[serde(default)]
+    pub name: Vec<String>,
+
+    /// device id
+    #[argh(option)]
+    #[serde(default)]
+    pub device: Vec<String>,
+
+    /// service uuid
+    #[argh(option)]
+    #[serde(default)]
+    pub service: Vec<String>,
+
+    /// write characteristic - characteristic_uuid::data[_type]
+    /// (will exit after all characteristics are written - in case of multiple
+    /// matching devices this may cause unexpected results. Use the --name/
+    /// --device/--service filters to limit device matches).
+    /// (Note that this does not handle partial writes)
+    #[argh(option)]
+    pub characteristic: Vec<String>,
+
+    /// minimum RSSI
+    #[argh(option)]
+    #[serde(default)]
+    pub rssi: Option<i16>,
+
+    /// scan timeout
+    #[argh(option)]
+    #[serde(default)]
+    pub timeout: Option<u64>,
+
+    /// force write without response
+    #[argh(switch)]
+    #[serde(default)]
+    pub without_response: bool,
+
+    /// read delay (ms)
+    #[argh(option)]
+    #[serde(default)]
+    pub read_delay: Option<u64>,
+
+    /// decode format <characteristic_uuid::type>
+    #[argh(option)]
+    #[serde(default)]
+    pub decode: Vec<String>,
+
+    /// file containing decode format <characteristic_uuid::type>
+    #[argh(option)]
+    #[serde(default)]
+    pub decode_file: Vec<String>,
 
     /// NDJSON output
     #[argh(switch)]

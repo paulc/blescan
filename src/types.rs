@@ -64,6 +64,9 @@ impl DeviceInfo {
         service_filter: &HashSet<Uuid>,
         characteristic_filter: &HashSet<Uuid>,
     ) -> anyhow::Result<()> {
+        // Clear existing servcices (from advertisment)
+        self.services.clear();
+        // Discover services
         match timeout(
             Duration::from_secs(ENUMERATE_TIMEOUT.load(Ordering::Relaxed)),
             peripheral.discover_services(),

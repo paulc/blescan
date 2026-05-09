@@ -24,7 +24,7 @@ pub async fn run(central: Adapter, args: MonitorArgs) -> anyhow::Result<()> {
         let mut reader = EventStream::new();
         loop {
             tokio::select! {
-                event = reader.next() => {
+                Some(Ok(event)) = reader.next() => {
                     println!("{:?}",event);
                     break
                 },

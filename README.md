@@ -13,6 +13,7 @@ filtering/processing).
 | `poll` | Continuously read characteristic values |
 | `notify` | Subscribe to notification events |
 | `write` | Write data to characteristics |
+| `write-read` | Write and then read data to characteristics (for protocols using a write-then-read pattern) |
 | `dump` | Raw advertisement event stream with optional event filtering |
 | `run` | Run command from JSON file |
 
@@ -122,9 +123,11 @@ Commands:
   enumerate         Enumerate BLE Devices
   poll              Read service data continuously
   write             Write characteristic data
+  write-read        Write characteristic data and then read response
   notify            Subscribe/listen for notify events
   dump              Dump raw BLE advertisement data
   run               Run JSON command file
+  monitor           monitor BLE devives
 
 ```
 
