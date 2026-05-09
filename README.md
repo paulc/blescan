@@ -127,7 +127,6 @@ Commands:
   notify            Subscribe/listen for notify events
   dump              Dump raw BLE advertisement data
   run               Run JSON command file
-  monitor           monitor BLE devives
 
 ```
 
