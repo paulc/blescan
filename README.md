@@ -51,6 +51,9 @@ Characteristic data can be decoded by specifying the data format using the
 `--decode <uuid::format>` flag (format can be: bool, utf8, f32/64, u8/16/32/64,
 i8/16/32/64). 
 
+The data format can also be specified as a struct of the above formats using 
+`struct<u32,u8,...>`.
+
 If no format is matched then the raw hex output is shown.
 
 Multiple `--decode` flags can be provided, for large numbers of definitions
@@ -304,6 +307,12 @@ blescan write --name "Config" --characteristic "0x2a57::100_u16"
 Decode values during read:
 ```
 blescan enumerate --read --decode "0x2a1c::i16"
+```
+
+Decode struct (decodes org.bluetooth.characteristic.current_time into YYYY,MM,DD,HH,MM,SS):
+```
+blescan enumerate --read --service 0x1805 --characteristic 0x2a2b --decode '0x2a2b::struct<u16,u8,u8,u8,u8,u8>'
+
 ```
 
 Dump raw advertisements as JSON:

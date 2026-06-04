@@ -37,6 +37,7 @@ pub enum CharFormat {
     F32,
     F64,
     Utf8,
+    Struct(Vec<CharFormat>),
 }
 
 impl TryFrom<&str> for CharFormat {
@@ -55,12 +56,32 @@ impl TryFrom<&str> for CharFormat {
             "f32" => Ok(CharFormat::F32),
             "f64" => Ok(CharFormat::F64),
             "utf8" => Ok(CharFormat::Utf8),
-            _ => Err(CharDataError::Format("Invalid Format".into())),
+            _ => {
+                // Parse struct definition: "Struct<bool,u8,...>"
+                let mut v: Vec<CharFormat> = Vec::new();
+                if let Some(s) = value.strip_prefix("struct<").and_then(|s| s.strip_suffix(">")) {
+                    for f in s.split(",") {
+                        v.push(CharFormat::try_from(f)?)
+                    }
+                    Ok(CharFormat::Struct(v))
+                } else {
+                    Err(CharDataError::Format("Invalid Format".into()))
+                }
+            }
         }
     }
 }
 
 impl CharFormat {
+    pub fn data_len(&self) -> Option<usize> {
+        match self {
+            CharFormat::Bool | CharFormat::U8 | CharFormat::I8 => Some(1),
+            CharFormat::U16 | CharFormat::I16 => Some(2),
+            CharFormat::U32 | CharFormat::I32 | CharFormat::F32 => Some(4),
+            CharFormat::U64 | CharFormat::I64 | CharFormat::F64 => Some(8),
+            _ => None,
+        }
+    }
     pub fn decode_value(&self, data: &[u8]) -> anyhow::Result<Value> {
         let v = match self {
             CharFormat::Bool => serde_json::to_value(u8::from_le_bytes(TryInto::<[u8; 1]>::try_into(data)?) != 0)?,
@@ -75,6 +96,26 @@ impl CharFormat {
             CharFormat::F32 => serde_json::to_value(f32::from_le_bytes(TryInto::<[u8; 4]>::try_into(data)?))?,
             CharFormat::F64 => serde_json::to_value(f64::from_le_bytes(TryInto::<[u8; 8]>::try_into(data)?))?,
             CharFormat::Utf8 => serde_json::to_value(TryInto::<String>::try_into(data.to_vec())?)?,
+            CharFormat::Struct(fields) => {
+                let mut s: Vec<Value> = Vec::new();
+                let mut data = data.to_vec();
+                for f in fields {
+                    if let CharFormat::Struct(_) = f {
+                        anyhow::bail!("Error: embedded struct")
+                    }
+                    if let Some(len) = f.data_len() {
+                        if let Some((a, b)) = data.split_at_mut_checked(len) {
+                            s.push(f.decode_value(a)?);
+                            data = b.to_vec();
+                        }
+                    } else {
+                        // Consume rest of buffer
+                        s.push(f.decode_value(&data)?);
+                        break;
+                    }
+                }
+                serde_json::to_value(s)?
+            }
         };
         Ok(v)
     }
