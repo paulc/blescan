@@ -1,14 +1,14 @@
 use btleplug::platform::Adapter;
-use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
+use tokio::sync::Semaphore;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
-use crate::MAX_TASKS;
 use crate::commands::EnumerateArgs;
 use crate::scanner::DeviceScanner;
 use crate::util::{make_decode_map, make_regex_filter, make_uuid_filter, run_with_timeout};
+use crate::MAX_TASKS;
 
 pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
     let device_filter = args.device;

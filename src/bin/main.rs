@@ -2,34 +2,11 @@ use anyhow::{anyhow, Context};
 use btleplug::api::Manager as _;
 use btleplug::platform::Manager;
 use std::io::Read;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 
-mod characteristic_data;
-mod commands;
-mod dump;
-mod enumerate;
-mod event;
-mod notify;
-mod poll;
-mod scan;
-mod scanner;
-mod types;
-mod util;
-mod write;
-mod write_read;
-
-use crate::commands::*;
-
-// Include UUID maps
-use crate::util::parse_uuid; // Needed for uuid_map include
-include!(concat!(env!("OUT_DIR"), "/uuid_map.rs"));
-
-// Default connection parameters
-static CONNECT_TIMEOUT: AtomicU64 = AtomicU64::new(5);
-static ENUMERATE_TIMEOUT: AtomicU64 = AtomicU64::new(5);
-static WRITE_TIMEOUT: AtomicU64 = AtomicU64::new(5);
-static DISCONNECT_TIMEOUT: AtomicU64 = AtomicU64::new(2);
-static MAX_TASKS: AtomicUsize = AtomicUsize::new(10);
+use blescan::commands::*;
+use blescan::{dump, enumerate, notify, poll, scan, write, write_read};
+use blescan::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, MAX_TASKS, WRITE_TIMEOUT};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

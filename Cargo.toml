@@ -3,6 +3,14 @@ name = "blescan"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "blescan"
+path = "src/lib.rs"
+
+[[bin]]
+name = "blescan"
+path = "src/bin/main.rs"
+
 [dependencies]
 anyhow = "1.0.102"
 argh = "0.1.19"

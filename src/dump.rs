@@ -1,9 +1,9 @@
-use crate::commands::DumpArgs;
 use btleplug::api::{Central, ScanFilter};
 use btleplug::platform::Adapter;
 use futures::StreamExt;
 use tokio::time::timeout;
 
+use crate::commands::DumpArgs;
 use std::collections::HashSet;
 use std::time::Duration;
 

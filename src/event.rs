@@ -1,5 +1,5 @@
 use crate::types::DeviceInfo;
-use btleplug::api::{Central, CentralEvent, CentralState, bleuuid::BleUuid};
+use btleplug::api::{bleuuid::BleUuid, Central, CentralEvent, CentralState};
 use btleplug::platform::{Adapter, PeripheralId};
 use serde::Serialize;
 use uuid::Uuid;
