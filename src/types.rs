@@ -13,7 +13,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use crate::characteristic_data::CharFormat;
-use crate::util::{format_properties, parse_uuid, serialize_char_props, serialize_hex, serialize_hex_option};
+use crate::util::{format_properties, serialize_char_props, serialize_hex, serialize_hex_option};
 use crate::{CHARACTERISTIC_MAP, DESCRIPTOR_MAP, SERVICE_MAP};
 use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, WRITE_TIMEOUT};
 
@@ -306,7 +306,7 @@ impl CharacteristicInfo {
         if self.properties.contains(CharPropFlags::NOTIFY) || self.properties.contains(CharPropFlags::INDICATE) {
             peripheral.subscribe(&self.characteristic).await?;
             Ok(Some(SubscriptionInfo {
-                device: parse_uuid(&peripheral.id().to_string())?,
+                device: peripheral.id().to_string(),
                 service: self.service_uuid,
                 characteristic: self.uuid,
             }))
@@ -350,7 +350,7 @@ impl std::fmt::Display for CharacteristicInfo {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SubscriptionInfo {
-    pub device: Uuid,
+    pub device: String, // Linux returns hci path rather than UUID
     pub service: Uuid,
     pub characteristic: Uuid,
 }
