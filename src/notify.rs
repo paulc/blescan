@@ -4,14 +4,14 @@ use futures::StreamExt;
 use serde_json::json;
 use tokio::sync::Semaphore;
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use crate::MAX_TASKS;
 use crate::commands::NotifyArgs;
 use crate::scanner::DeviceScanner;
 use crate::types::NotificationData;
 use crate::util::{make_decode_map, make_regex_filter, make_uuid_filter, run_with_timeout};
+use crate::MAX_TASKS;
 
 pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
     let device_filter = args.device;
