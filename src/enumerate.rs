@@ -1,6 +1,7 @@
 use btleplug::platform::Adapter;
 use tokio::sync::mpsc;
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -30,6 +31,8 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
         let json = args.json;
         let read = args.read;
         let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter, true).await?;
+        let mut join_set: JoinSet<anyhow::Result<()>> = JoinSet::new();
+
         loop {
             tokio::select! {
                 _ = rx.recv() => {
@@ -39,13 +42,13 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                 s = scanner.next_match() => {
                     match s {
                         Ok(Some((peripheral, mut device))) => {
-                            tokio::spawn({
                                 let task_semaphore = Arc::clone(&task_semaphore);
                                 let service_filter = Arc::clone(&service_filter);
                                 let characteristic_filter = Arc::clone(&characteristic_filter);
                                 let decode_map = Arc::clone(&decode_map);
                                 let max = Arc::clone(&max);
                                 let tx = tx.clone();
+                            join_set.spawn(
                                 async move {
                                     // Limit running tasks using semaphore
                                     let _permit = task_semaphore.acquire().await?;
@@ -77,9 +80,8 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                                     if let Err(e) = result {
                                         eprintln!("Error: {e}")
                                     }
-                                    Ok::<(), anyhow::Error>(())
-                                }
-                            });
+                                    Ok(())
+                                });
                         },
                         Ok(None) => {
                             eprintln!("Error: BLE Event Stream Ended");
@@ -93,6 +95,11 @@ pub async fn run(central: Adapter, args: EnumerateArgs) -> anyhow::Result<()> {
                 }
             }
         }
+
+        while let Some(result) = join_set.join_next().await {
+            result??; // JoinError (panic/cancel) / anyhow::Error
+        }
+
         Ok::<(), anyhow::Error>(())
     };
 

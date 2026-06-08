@@ -3,6 +3,7 @@ use btleplug::platform::Adapter;
 use futures::StreamExt;
 use serde_json::json;
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -24,51 +25,56 @@ pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
     let scan = async {
         let json = args.json;
         let mut scanner = DeviceScanner::start(central, args.rssi, name_filter, device_filter, true).await?;
+        let mut join_set: JoinSet<anyhow::Result<()>> = JoinSet::new();
+
         while let Some((peripheral, mut device)) = scanner.next_match().await? {
             let task_semaphore = Arc::clone(&task_semaphore);
-            tokio::spawn({
-                let service_filter = Arc::clone(&service_filter);
-                let characteristic_filter = Arc::clone(&characteristic_filter);
-                let decode_map = Arc::clone(&decode_map);
-                async move {
-                    // Limit running tasks using semaphore
-                    let _permit = task_semaphore.acquire().await?;
-                    device.connect(&peripheral).await?;
-                    device
-                        .enumerate(&peripheral, &service_filter, &characteristic_filter)
-                        .await?;
-                    let subscriptions = device.subscribe(&peripheral).await?;
-                    for s in &subscriptions {
-                        if json {
-                            println!("{}", json!({ "subscription": s }));
-                        } else {
-                            println!("{}", s)
-                        }
+            let service_filter = Arc::clone(&service_filter);
+            let characteristic_filter = Arc::clone(&characteristic_filter);
+            let decode_map = Arc::clone(&decode_map);
+            join_set.spawn(async move {
+                // Limit running tasks using semaphore
+                let _permit = task_semaphore.acquire().await?;
+                device.connect(&peripheral).await?;
+                device
+                    .enumerate(&peripheral, &service_filter, &characteristic_filter)
+                    .await?;
+                let subscriptions = device.subscribe(&peripheral).await?;
+                for s in &subscriptions {
+                    if json {
+                        println!("{}", json!({ "subscription": s }));
+                    } else {
+                        println!("{}", s)
                     }
-                    if !subscriptions.is_empty() {
-                        let mut notification_stream = peripheral.notifications().await?;
-                        while let Some(notification) = notification_stream.next().await {
-                            let decoded = decode_map
-                                .get(&notification.uuid)
-                                .and_then(|fmt| fmt.decode_value(&notification.value).ok());
-                            let n = NotificationData {
-                                service: notification.service_uuid,
-                                characteristic: notification.uuid,
-                                value: notification.value,
-                                decoded,
-                            };
-                            if json {
-                                println!("{}", json!({ "notification" : n}));
-                            } else {
-                                println!("{}", n);
-                            }
-                        }
-                    }
-
-                    Ok::<(), anyhow::Error>(())
                 }
+                if !subscriptions.is_empty() {
+                    let mut notification_stream = peripheral.notifications().await?;
+                    while let Some(notification) = notification_stream.next().await {
+                        let decoded = decode_map
+                            .get(&notification.uuid)
+                            .and_then(|fmt| fmt.decode_value(&notification.value).ok());
+                        let n = NotificationData {
+                            service: notification.service_uuid,
+                            characteristic: notification.uuid,
+                            value: notification.value,
+                            decoded,
+                        };
+                        if json {
+                            println!("{}", json!({ "notification" : n}));
+                        } else {
+                            println!("{}", n);
+                        }
+                    }
+                }
+
+                Ok(())
             });
         }
+
+        while let Some(result) = join_set.join_next().await {
+            result??; // JoinError (panic/cancel) / anyhow::Error
+        }
+
         Ok::<(), anyhow::Error>(())
     };
 
