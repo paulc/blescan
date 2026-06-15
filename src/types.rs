@@ -98,6 +98,27 @@ impl DeviceInfo {
 
     /// Connect to device (note that you need to manage connect/disconnect explicitly)
     pub async fn connect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
+        if !peripheral.is_connected().await? {
+            match timeout(
+                Duration::from_secs(CONNECT_TIMEOUT.load(Ordering::Relaxed)),
+                peripheral.connect(),
+            )
+            .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => anyhow::bail!("Connect error for {}: {e}", peripheral.id()),
+                Err(_elapsed) => {
+                    // Dropping the connect future does NOT stop CoreBluetooth from
+                    // retrying; cancel it explicitly or it wedges the central.
+                    let _ = peripheral.disconnect().await;
+                    anyhow::bail!("Connect timeout for {}", peripheral.id());
+                }
+            }
+        }
+        Ok(())
+    }
+/*
+    pub async fn _connect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
         if !peripheral.is_connected().await?
             && let Err(e) = timeout(
                 Duration::from_secs(CONNECT_TIMEOUT.load(Ordering::Relaxed)),
@@ -109,6 +130,7 @@ impl DeviceInfo {
         }
         Ok(())
     }
+*/
 
     /// Disconnect from device (note that you need to manage connect/disconnect explicitly)
     pub async fn disconnect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {

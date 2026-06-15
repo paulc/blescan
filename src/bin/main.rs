@@ -5,7 +5,7 @@ use std::io::Read;
 use std::sync::atomic::Ordering;
 
 use blescan::commands::*;
-use blescan::{dump, enumerate, notify, poll, scan, write, write_read};
+use blescan::{dump, enumerate, js, notify, poll, scan, write, write_read};
 use blescan::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, MAX_TASKS, WRITE_TIMEOUT};
 
 #[tokio::main]
@@ -61,8 +61,10 @@ async fn main() -> anyhow::Result<()> {
             Commands::Write(args) => write::run(central, args).await?,
             Commands::WriteRead(args) => write_read::run(central, args).await?,
             Commands::Dump(args) => dump::run(central, args).await?,
+            Commands::Js(args) => js::run(central, args).await?,
             Commands::Run(_) => anyhow::bail!("Invalid JSON command file: <run> not allowed"),
         },
+        Commands::Js(args) => js::run(central, args).await?,
     }
 
     Ok(())

@@ -1,8 +1,10 @@
+pub mod bridge;
 pub mod characteristic_data;
 pub mod commands;
 pub mod dump;
 pub mod enumerate;
 pub mod event;
+pub mod js;
 pub mod notify;
 pub mod poll;
 pub mod scan;

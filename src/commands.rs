@@ -45,6 +45,7 @@ pub enum Commands {
     Notify(NotifyArgs),
     Dump(DumpArgs),
     Run(RunArgs),
+    Js(JsArgs),
 }
 
 #[derive(FromArgs, Debug, Serialize, Deserialize)]
@@ -400,3 +401,8 @@ pub struct RunArgs {
     #[argh(positional)]
     pub path: String,
 }
+
+#[derive(FromArgs, Debug, Serialize, Deserialize)]
+/// Run JS script
+#[argh(subcommand, name = "js")]
+pub struct JsArgs {}
