@@ -117,20 +117,6 @@ impl DeviceInfo {
         }
         Ok(())
     }
-/*
-    pub async fn _connect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
-        if !peripheral.is_connected().await?
-            && let Err(e) = timeout(
-                Duration::from_secs(CONNECT_TIMEOUT.load(Ordering::Relaxed)),
-                peripheral.connect(),
-            )
-            .await
-        {
-            anyhow::bail!("Connect timeout/error for {}: {:?}", peripheral.id(), e);
-        }
-        Ok(())
-    }
-*/
 
     /// Disconnect from device (note that you need to manage connect/disconnect explicitly)
     pub async fn disconnect(&self, peripheral: &Peripheral) -> anyhow::Result<()> {
