@@ -403,6 +403,31 @@ pub struct RunArgs {
 }
 
 #[derive(FromArgs, Debug, Serialize, Deserialize)]
-/// Run JS script
+/// Run JS script with BLE `scan(opts)` function installed in globals
+///   `scan({rssi?, name?|names?, device?|devices?, filter_seen? })`
 #[argh(subcommand, name = "js")]
-pub struct JsArgs {}
+pub struct JsArgs {
+    #[argh(option)]
+    /// JS file (multiple allowed)
+    pub file: Vec<String>,
+
+    #[argh(option)]
+    /// JS script literal (multiple allowed)
+    pub script: Vec<String>,
+
+    #[argh(switch)]
+    /// JS REPL
+    pub repl: bool,
+
+    #[argh(option)]
+    /// call JS function
+    pub call: Vec<String>,
+
+    #[argh(option)]
+    /// call args (json)
+    pub arg: Vec<String>,
+
+    #[argh(switch)]
+    /// REPL resolve top-level promises
+    pub resolve_promise: bool,
+}
