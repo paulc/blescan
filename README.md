@@ -121,9 +121,12 @@ functions in a file and then run a REPL with these functions available using
 file from the command line using --call.
 
 Note that QuickJS doesnt support top-level await (and almost all of the BLE
-related functions are async) so you will need to structure the code
-accordingly. In REPL more you can use the `--resolve-promise` flag to 
-automatically resolve promises when they are reurned from REPL commands.
+related functions are async) so in most cases you need to define an async functiopn (or IIFE) or use .then().
+
+In REPL more you can use the `--resolve-promise` flag to automatically resolve
+promises when they are reurned from REPL commands, this is handy for
+interactive experiments but note that this can block the Ctrl-C handler if you
+are in an async loop.
 
 The `scan({ rssi?, name?|names?, device?|devices?, filter_seen? })` function 
 returns an async iterator returning `{ device, done }`.
@@ -152,7 +155,7 @@ The `device` object provides teh following methods:
     async device.on_notification(cb, asArrayBuffer?) -> stop_fn
         // Call callback with notification data 
 
-For examples of the scripting API see the `./scripts/` directory
+For examples of the scripting API see exaples section below or the examples in the `./scripts/` directory
 
 ```
     
@@ -397,6 +400,27 @@ blescan dump --json
 Filter dump by event type:
 ```
 blescan dump --device 464694e8-0a01-005b-95b2-0ae54239625e --event DeviceDiscovered --event ManufacturerDataAdvertisement 
+```
+
+Scan using JS
+```
+blescan js --script '(async () => { for await (const dev of scan({ names: [], filter_seen: true })) { console.log(await dev.snapshot()) }})()'
+```
+
+Enumerate devices using JS callback 
+```
+blescan js \
+    --script 'const cb = async (dev) => { dev.connect().then(async () => { await dev.enumerate(); console.log(JSON.stringify(await dev.snapshot(),null,2)); await dev.disconnect(); })}' \
+    --script 'const scanner = async (names) => { for await (const dev of scan({ names, filter_seen: true })) { cb(dev) }}' \
+    --call scanner --arg '["INA219","TV"]'
+```
+
+Subscribe to NOTIFY characteristic
+```
+blescan js \
+    --script 'const cb = async (dev) => { dev.connect().then(async () => { await dev.enumerate(); await dev.subscribe(["00000003-9b04-4347-98ff-57e8f7803509::struct<f32,f32>"]); await dev.on_notification((n) => console.log(n)) })}' \
+    --script 'const scanner = async (names) => { for await (const dev of scan({ names, filter_seen: true })) { cb(dev) }}' \
+    --call scanner --arg '["INA219"]'
 ```
 
 ## Building
