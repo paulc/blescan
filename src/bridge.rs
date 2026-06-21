@@ -57,10 +57,10 @@ use rquickjs::{
 };
 use uuid::Uuid;
 
-use crate::characteristic_data::CharFormat; // <-- adjust
-use crate::scanner::DeviceScanner; // <-- adjust (module holding DeviceScanner)
-use crate::types::DeviceInfo; // <-- adjust
-use crate::util::{make_regex_filter, make_uuid_filter, parse_uuid}; // <-- adjust
+use crate::characteristic_data::CharFormat;
+use crate::scanner::DeviceScanner;
+use crate::types::DeviceInfo;
+use crate::util::{make_regex_filter, make_uuid_filter, parse_uuid};
 
 /// Decode formats registered by `subscribe`, consulted when notifications arrive.
 type NotifyDecode = Arc<StdMutex<HashMap<Uuid, CharFormat>>>;

@@ -1,8 +1,9 @@
 # blescan
 
 A simple command-line BLE scanner and debugging tool (using the `btleplug` Rust
-crate).  Supports human readable text and JSON outputs (for further
-filtering/processing).
+crate).  Supports human readable text, JSON outputs (for further
+filtering/processing), and a JavsScript scripting mode for custom
+processing.
 
 ## Commands
 
@@ -16,6 +17,7 @@ filtering/processing).
 | `write-read` | Write and then read data to characteristics (for protocols using a write-then-read pattern) |
 | `dump` | Raw advertisement event stream with optional event filtering |
 | `run` | Run command from JSON file |
+| `js` | Run JavaScript script |
 
 ## Filtering
 
@@ -103,6 +105,59 @@ It is possible to dump to equivalent JSON for a CLI command using
 
 You can pass the json file from stdin using `blescan run -- -`.
 
+## JavsScript Mode
+
+In JavaScript mode (`blescan js`) a QuickJS scripting environment (using
+rquickjs) is available which provides a BLE `scan` function and `device` object
+to allow custom processing. The JS environment supports execution of script
+files (`blescan js --file <file>`), literal javascript (`blescan js --script
+<script>`), a REPL (`blescan js --repl`), or call JS functions with an optional
+JSON argument (`blescan js --call f --arg '{ "a":1 }'`). 
+
+These can be combined, and all share the same JS context so objects defined in
+one JS call are available in subsequent ones. This allows you to define utility
+functions in a file and then run a REPL with these functions available using
+`blescan js --file utility.js --repl`, or call a function defined in a separate
+file from the command line using --call.
+
+Note that QuickJS doesnt support top-level await (and almost all of the BLE
+related functions are async) so you will need to structure the code
+accordingly. In REPL more you can use the `--resolve-promise` flag to 
+automatically resolve promises when they are reurned from REPL commands.
+
+The `scan({ rssi?, name?|names?, device?|devices?, filter_seen? })` function 
+returns an async iterator returning `{ device, done }`.
+
+The `device` object provides teh following methods:
+
+```
+    async device.connect()
+    async device.disconnect()
+    async device.enumerate()
+    async device.read([characteristic,..], as_array_buffer?) -> { uuid: value }
+        // chars: ["uuid"] or ["uuid::fmt"]; fmt decodes, otherwise hex / ArrayBuffer.
+    async device.write(characteristic, value, withoutResponse?)
+        //   characteristic: "uuid" or "uuid::fmt"
+        //   value: with "::fmt", a JS value (scalar) or array (for struct<...>),
+        //          passed through as JSON; without a fmt, the JS shim has already
+        //          normalised a hex string / ArrayBuffer / Uint8Array to hex.
+    async device.updateRssi()
+    async device.snapshot()
+        // returns device state (may or may-not have been enumerated)
+    async device.subscribe([characteristic,..]) -> [uuid...]
+        // chars: ["uuid"] or ["uuid::fmt"]; a fmt registers a decoder for notification data
+    async device.unsubscribe([characteristic,..]) -> [uuid...]
+        // chars: ["uuid"] or ["uuid::fmt"] (fmt ignored); stops notifications 
+    async device.notifications(as_array_buffer?) -> async notifications iterator
+    async device.on_notification(cb, asArrayBuffer?) -> stop_fn
+        // Call callback with notification data 
+
+For examples of the scripting API see the `./scripts/` directory
+
+```
+    
+
+
 ## Usage
 
 ```
@@ -130,6 +185,9 @@ Commands:
   notify            Subscribe/listen for notify events
   dump              Dump raw BLE advertisement data
   run               Run JSON command file
+  js                Run JS script with BLE `scan(opts)` function installed in
+                    globals   `scan({{rssi?, name?|names?, device?|devices?,
+                    filter_seen? }})`
 
 ```
 
@@ -258,6 +316,22 @@ Positional Arguments:
   path
 
 Options:
+  --help, help      display usage information
+
+```
+
+```
+Usage: blescan js [--file <file...>] [--script <script...>] [--repl] [--call <call...>] [--arg <arg...>] [--resolve-promise]
+
+Run JS script with BLE `scan(opts)` function installed in globals   `scan({rssi?, name?|names?, device?|devices?, filter_seen? })`
+
+Options:
+  --file            JS file (multiple allowed)
+  --script          JS script literal (multiple allowed)
+  --repl            JS REPL
+  --call            call JS function
+  --arg             call args (json)
+  --resolve-promise REPL resolve top-level promises
   --help, help      display usage information
 
 ```
