@@ -36,4 +36,3 @@ const ina219 = async ({json = false, showServices = false} = {}) => {
   return () => { n.stop(); dev.disconnect() };
 }
 
-globalThis.ina219 = ina219;

@@ -89,13 +89,22 @@ struct JsOutcome<T> {
 
 impl<T> JsOutcome<T> {
     fn ok(value: T) -> Self {
-        Self { value: Some(value), error: None }
+        Self {
+            value: Some(value),
+            error: None,
+        }
     }
     fn empty() -> Self {
-        Self { value: None, error: None }
+        Self {
+            value: None,
+            error: None,
+        }
     }
     fn err(msg: String) -> Self {
-        Self { value: None, error: Some(msg) }
+        Self {
+            value: None,
+            error: Some(msg),
+        }
     }
 }
 
@@ -118,11 +127,7 @@ enum CharValue {
 }
 
 /// Decoded -> JS value; Raw -> hex string, or ArrayBuffer if `as_array_buffer`.
-fn char_value_to_js<'js>(
-    ctx: &Ctx<'js>,
-    val: CharValue,
-    as_array_buffer: bool,
-) -> JsResult<Value<'js>> {
+fn char_value_to_js<'js>(ctx: &Ctx<'js>, val: CharValue, as_array_buffer: bool) -> JsResult<Value<'js>> {
     match val {
         CharValue::Decoded(json) => {
             let s = serde_json::to_string(&json).unwrap_or_else(|_| "null".to_string());
@@ -160,7 +165,9 @@ fn parse_specs(items: &[String]) -> Result<Vec<(Uuid, Option<CharFormat>)>, Stri
 async fn ensure_characteristics(p: &Peripheral) -> Result<BTreeSet<Characteristic>, String> {
     let mut available = p.characteristics();
     if available.is_empty() {
-        p.discover_services().await.map_err(|e| format!("discover failed: {e}"))?;
+        p.discover_services()
+            .await
+            .map_err(|e| format!("discover failed: {e}"))?;
         available = p.characteristics();
     }
     Ok(available)
@@ -276,16 +283,11 @@ fn json_f64(v: &serde_json::Value) -> Result<f64, String> {
     v.as_f64().ok_or_else(|| format!("expected a number, got `{v}`"))
 }
 
-fn encode_write_value(
-    fmt: &WriteFormat,
-    v: &serde_json::Value,
-    out: &mut Vec<u8>,
-) -> Result<(), String> {
+fn encode_write_value(fmt: &WriteFormat, v: &serde_json::Value, out: &mut Vec<u8>) -> Result<(), String> {
     macro_rules! put_int {
         ($t:ty) => {{
             let n = json_int(v)?;
-            let x: $t = <$t>::try_from(n)
-                .map_err(|_| format!("value {n} out of range for {}", stringify!($t)))?;
+            let x: $t = <$t>::try_from(n).map_err(|_| format!("value {n} out of range for {}", stringify!($t)))?;
             out.extend_from_slice(&x.to_le_bytes());
         }};
     }
@@ -305,11 +307,7 @@ fn encode_write_value(
                 .as_array()
                 .ok_or_else(|| "struct format requires an array value".to_string())?;
             if arr.len() != fields.len() {
-                return Err(format!(
-                    "struct expects {} value(s), got {}",
-                    fields.len(),
-                    arr.len()
-                ));
+                return Err(format!("struct expects {} value(s), got {}", fields.len(), arr.len()));
             }
             for (f, item) in fields.iter().zip(arr) {
                 encode_write_value(f, item, out)?;
@@ -325,8 +323,7 @@ fn write_payload(fmt: Option<&str>, value: &str) -> Result<Vec<u8>, String> {
     match fmt {
         Some(fmt_str) => {
             let wf = parse_write_format(fmt_str)?;
-            let jv: serde_json::Value =
-                serde_json::from_str(value).map_err(|e| format!("bad value JSON: {e}"))?;
+            let jv: serde_json::Value = serde_json::from_str(value).map_err(|e| format!("bad value JSON: {e}"))?;
             let mut buf = Vec::new();
             encode_write_value(&wf, &jv, &mut buf)?;
             Ok(buf)
@@ -385,7 +382,10 @@ impl<'js> FromJs<'js> for ScanOpts {
         };
         let devices = match o.get::<_, Option<Vec<String>>>("devices")? {
             Some(v) => v,
-            None => o.get::<_, Option<String>>("device")?.map(|s| vec![s]).unwrap_or_default(),
+            None => o
+                .get::<_, Option<String>>("device")?
+                .map(|s| vec![s])
+                .unwrap_or_default(),
         };
         Ok(ScanOpts {
             rssi: o.get::<_, Option<i16>>("rssi")?,
@@ -469,8 +469,12 @@ fn build_scan_iterable<'js>(
             async move {
                 let mut guard = state.lock().await;
                 if matches!(&*guard, ScanState::Idle { .. }) {
-                    let ScanState::Idle { rssi, names, devices, filter_seen } =
-                        std::mem::replace(&mut *guard, ScanState::Closed)
+                    let ScanState::Idle {
+                        rssi,
+                        names,
+                        devices,
+                        filter_seen,
+                    } = std::mem::replace(&mut *guard, ScanState::Closed)
                     else {
                         unreachable!()
                     };
@@ -481,9 +485,7 @@ fn build_scan_iterable<'js>(
                 }
                 match &mut *guard {
                     ScanState::Running(s) => match s.next_match().await {
-                        Ok(Some((peripheral, info))) => {
-                            JsOutcome::ok(ScannedDevice { peripheral, info })
-                        }
+                        Ok(Some((peripheral, info))) => JsOutcome::ok(ScannedDevice { peripheral, info }),
                         Ok(None) => JsOutcome::empty(),
                         Err(e) => JsOutcome::err(e.to_string()),
                     },
@@ -594,7 +596,11 @@ fn build_notifications_iterable<'js>(
                             Some(v) => CharValue::Decoded(v),
                             None => CharValue::Raw(n.value),
                         };
-                        JsOutcome::ok(Notification { uuid: n.uuid, value, as_array_buffer })
+                        JsOutcome::ok(Notification {
+                            uuid: n.uuid,
+                            value,
+                            as_array_buffer,
+                        })
                     }
                     Step::Done | Step::Cancelled => {
                         *guard = NotifyState::Closed; // drops the stream
@@ -672,11 +678,7 @@ impl<'js> IntoJs<'js> for ReadResults {
 }
 
 /// Build a JS object wrapping a `DeviceInfo` + its `Peripheral`.
-fn device_into_js<'js>(
-    ctx: &Ctx<'js>,
-    peripheral: Peripheral,
-    info: DeviceInfo,
-) -> JsResult<Object<'js>> {
+fn device_into_js<'js>(ctx: &Ctx<'js>, peripheral: Peripheral, info: DeviceInfo) -> JsResult<Object<'js>> {
     let id = info.id.clone();
     let inner = Arc::new(Mutex::new(info));
     // Decode formats registered by subscribe(), used when notifications arrive.
@@ -687,47 +689,57 @@ fn device_into_js<'js>(
 
     let snapshot = {
         let inner = inner.clone();
-        Function::new(ctx.clone(), Async(move || {
-            let inner = inner.clone();
-            async move {
-                match serde_json::to_string(&*inner.lock().await) {
-                    Ok(j) => JsOutcome::ok(j),
-                    Err(e) => JsOutcome::err(e.to_string()),
+        Function::new(
+            ctx.clone(),
+            Async(move || {
+                let inner = inner.clone();
+                async move {
+                    match serde_json::to_string(&*inner.lock().await) {
+                        Ok(j) => JsOutcome::ok(j),
+                        Err(e) => JsOutcome::err(e.to_string()),
+                    }
                 }
-            }
-        }))?
+            }),
+        )?
     };
 
     let connect = {
         let (p, inner) = (peripheral.clone(), inner.clone());
-        Function::new(ctx.clone(), Async(move || {
-            let (p, inner) = (p.clone(), inner.clone());
-            async move {
-                match inner.lock().await.connect(&p).await {
-                    Ok(()) => JsOutcome::<String>::empty(),
-                    Err(e) => JsOutcome::err(e.to_string()),
+        Function::new(
+            ctx.clone(),
+            Async(move || {
+                let (p, inner) = (p.clone(), inner.clone());
+                async move {
+                    match inner.lock().await.connect(&p).await {
+                        Ok(()) => JsOutcome::<String>::empty(),
+                        Err(e) => JsOutcome::err(e.to_string()),
+                    }
                 }
-            }
-        }))?
+            }),
+        )?
     };
 
     let disconnect = {
         let (p, inner) = (peripheral.clone(), inner.clone());
-        Function::new(ctx.clone(), Async(move || {
-            let (p, inner) = (p.clone(), inner.clone());
-            async move {
-                match inner.lock().await.disconnect(&p).await {
-                    Ok(()) => JsOutcome::<String>::empty(),
-                    Err(e) => JsOutcome::err(e.to_string()),
+        Function::new(
+            ctx.clone(),
+            Async(move || {
+                let (p, inner) = (p.clone(), inner.clone());
+                async move {
+                    match inner.lock().await.disconnect(&p).await {
+                        Ok(()) => JsOutcome::<String>::empty(),
+                        Err(e) => JsOutcome::err(e.to_string()),
+                    }
                 }
-            }
-        }))?
+            }),
+        )?
     };
 
     let enumerate = {
         let (p, inner) = (peripheral.clone(), inner.clone());
-        Function::new(ctx.clone(), Async(
-            move |services: Opt<Vec<String>>, chars: Opt<Vec<String>>| {
+        Function::new(
+            ctx.clone(),
+            Async(move |services: Opt<Vec<String>>, chars: Opt<Vec<String>>| {
                 let (p, inner) = (p.clone(), inner.clone());
                 async move {
                     let svc_list = services.0.unwrap_or_default();
@@ -745,16 +757,17 @@ fn device_into_js<'js>(
                         Err(e) => JsOutcome::err(e.to_string()),
                     }
                 }
-            },
-        ))?
+            }),
+        )?
     };
 
     // read(chars, as_array_buffer?) -> { uuid: value }
     // chars: ["uuid"] or ["uuid::fmt"]; fmt decodes, otherwise hex / ArrayBuffer.
     let read = {
         let (p, inner) = (peripheral.clone(), inner.clone());
-        Function::new(ctx.clone(), Async(
-            move |chars: Opt<Vec<String>>, as_array_buffer: Opt<bool>| {
+        Function::new(
+            ctx.clone(),
+            Async(move |chars: Opt<Vec<String>>, as_array_buffer: Opt<bool>| {
                 let (p, inner) = (p.clone(), inner.clone());
                 async move {
                     let specs = match parse_specs(&chars.0.unwrap_or_default()) {
@@ -770,9 +783,7 @@ fn device_into_js<'js>(
                     let mut items = Vec::with_capacity(specs.len());
                     for (uuid, fmt) in specs {
                         let Some(ch) = available.iter().find(|c| c.uuid == uuid) else {
-                            return JsOutcome::err(format!(
-                                "characteristic {uuid} not found (enumerate first?)"
-                            ));
+                            return JsOutcome::err(format!("characteristic {uuid} not found (enumerate first?)"));
                         };
                         let bytes = match p.read(ch).await {
                             Ok(b) => b,
@@ -787,10 +798,13 @@ fn device_into_js<'js>(
                         };
                         items.push((uuid, val));
                     }
-                    JsOutcome::ok(ReadResults { items, as_array_buffer: as_ab })
+                    JsOutcome::ok(ReadResults {
+                        items,
+                        as_array_buffer: as_ab,
+                    })
                 }
-            },
-        ))?
+            }),
+        )?
     };
 
     // subscribe(chars) -> [uuid...]
@@ -798,85 +812,90 @@ fn device_into_js<'js>(
     // characteristic's notifications.
     let subscribe = {
         let (p, inner, decode) = (peripheral.clone(), inner.clone(), notify_decode.clone());
-        Function::new(ctx.clone(), Async(move |chars: Opt<Vec<String>>| {
-            let (p, inner, decode) = (p.clone(), inner.clone(), decode.clone());
-            async move {
-                let specs = match parse_specs(&chars.0.unwrap_or_default()) {
-                    Ok(s) => s,
-                    Err(e) => return JsOutcome::<String>::err(e),
-                };
-                let _guard = inner.lock().await;
-                let available = match ensure_characteristics(&p).await {
-                    Ok(a) => a,
-                    Err(e) => return JsOutcome::err(e),
-                };
-                let mut subscribed = Vec::with_capacity(specs.len());
-                for (uuid, fmt) in specs {
-                    let Some(ch) = available.iter().find(|c| c.uuid == uuid) else {
-                        return JsOutcome::err(format!(
-                            "characteristic {uuid} not found (enumerate first?)"
-                        ));
+        Function::new(
+            ctx.clone(),
+            Async(move |chars: Opt<Vec<String>>| {
+                let (p, inner, decode) = (p.clone(), inner.clone(), decode.clone());
+                async move {
+                    let specs = match parse_specs(&chars.0.unwrap_or_default()) {
+                        Ok(s) => s,
+                        Err(e) => return JsOutcome::<String>::err(e),
                     };
-                    if let Err(e) = p.subscribe(ch).await {
-                        return JsOutcome::err(format!("subscribe {uuid} failed: {e}"));
+                    let _guard = inner.lock().await;
+                    let available = match ensure_characteristics(&p).await {
+                        Ok(a) => a,
+                        Err(e) => return JsOutcome::err(e),
+                    };
+                    let mut subscribed = Vec::with_capacity(specs.len());
+                    for (uuid, fmt) in specs {
+                        let Some(ch) = available.iter().find(|c| c.uuid == uuid) else {
+                            return JsOutcome::err(format!("characteristic {uuid} not found (enumerate first?)"));
+                        };
+                        if let Err(e) = p.subscribe(ch).await {
+                            return JsOutcome::err(format!("subscribe {uuid} failed: {e}"));
+                        }
+                        if let Some(f) = fmt {
+                            decode.lock().unwrap().insert(uuid, f);
+                        }
+                        subscribed.push(uuid.to_string());
                     }
-                    if let Some(f) = fmt {
-                        decode.lock().unwrap().insert(uuid, f);
+                    match serde_json::to_string(&subscribed) {
+                        Ok(j) => JsOutcome::ok(j),
+                        Err(e) => JsOutcome::err(e.to_string()),
                     }
-                    subscribed.push(uuid.to_string());
                 }
-                match serde_json::to_string(&subscribed) {
-                    Ok(j) => JsOutcome::ok(j),
-                    Err(e) => JsOutcome::err(e.to_string()),
-                }
-            }
-        }))?
+            }),
+        )?
     };
 
     // unsubscribe(chars) -> [uuid...]
     // chars: ["uuid"] or ["uuid::fmt"] (fmt ignored); stops notifications for
     // each characteristic and drops any decoder registered by subscribe().
     let unsubscribe = {
-        let (p, inner, decode, cancels) =
-            (peripheral.clone(), inner.clone(), notify_decode.clone(), notif_cancels.clone());
-        Function::new(ctx.clone(), Async(move |chars: Opt<Vec<String>>| {
-            let (p, inner, decode, cancels) =
-                (p.clone(), inner.clone(), decode.clone(), cancels.clone());
-            async move {
-                let specs = match parse_specs(&chars.0.unwrap_or_default()) {
-                    Ok(s) => s,
-                    Err(e) => return JsOutcome::<String>::err(e),
-                };
-                let _guard = inner.lock().await;
-                let available = match ensure_characteristics(&p).await {
-                    Ok(a) => a,
-                    Err(e) => return JsOutcome::err(e),
-                };
-                let mut unsubscribed = Vec::with_capacity(specs.len());
-                for (uuid, _fmt) in specs {
-                    let Some(ch) = available.iter().find(|c| c.uuid == uuid) else {
-                        return JsOutcome::err(format!(
-                            "characteristic {uuid} not found (enumerate first?)"
-                        ));
+        let (p, inner, decode, cancels) = (
+            peripheral.clone(),
+            inner.clone(),
+            notify_decode.clone(),
+            notif_cancels.clone(),
+        );
+        Function::new(
+            ctx.clone(),
+            Async(move |chars: Opt<Vec<String>>| {
+                let (p, inner, decode, cancels) = (p.clone(), inner.clone(), decode.clone(), cancels.clone());
+                async move {
+                    let specs = match parse_specs(&chars.0.unwrap_or_default()) {
+                        Ok(s) => s,
+                        Err(e) => return JsOutcome::<String>::err(e),
                     };
-                    if let Err(e) = p.unsubscribe(ch).await {
-                        return JsOutcome::err(format!("unsubscribe {uuid} failed: {e}"));
+                    let _guard = inner.lock().await;
+                    let available = match ensure_characteristics(&p).await {
+                        Ok(a) => a,
+                        Err(e) => return JsOutcome::err(e),
+                    };
+                    let mut unsubscribed = Vec::with_capacity(specs.len());
+                    for (uuid, _fmt) in specs {
+                        let Some(ch) = available.iter().find(|c| c.uuid == uuid) else {
+                            return JsOutcome::err(format!("characteristic {uuid} not found (enumerate first?)"));
+                        };
+                        if let Err(e) = p.unsubscribe(ch).await {
+                            return JsOutcome::err(format!("unsubscribe {uuid} failed: {e}"));
+                        }
+                        decode.lock().unwrap().remove(&uuid);
+                        unsubscribed.push(uuid.to_string());
                     }
-                    decode.lock().unwrap().remove(&uuid);
-                    unsubscribed.push(uuid.to_string());
+                    // Close every live notifications iterator on this device. The
+                    // underlying btleplug stream is device-wide (not per-characteristic),
+                    // so there's no finer granularity to target.
+                    for handle in cancels.lock().unwrap().drain(..) {
+                        fire_cancel(&handle);
+                    }
+                    match serde_json::to_string(&unsubscribed) {
+                        Ok(j) => JsOutcome::ok(j),
+                        Err(e) => JsOutcome::err(e.to_string()),
+                    }
                 }
-                // Close every live notifications iterator on this device. The
-                // underlying btleplug stream is device-wide (not per-characteristic),
-                // so there's no finer granularity to target.
-                for handle in cancels.lock().unwrap().drain(..) {
-                    fire_cancel(&handle);
-                }
-                match serde_json::to_string(&unsubscribed) {
-                    Ok(j) => JsOutcome::ok(j),
-                    Err(e) => JsOutcome::err(e.to_string()),
-                }
-            }
-        }))?
+            }),
+        )?
     };
 
     // write(spec, value, withoutResponse?)
@@ -886,8 +905,9 @@ fn device_into_js<'js>(
     //          normalised a hex string / ArrayBuffer / Uint8Array to hex.
     let write = {
         let (p, inner) = (peripheral.clone(), inner.clone());
-        Function::new(ctx.clone(), Async(
-            move |spec: String, value: String, wor: Opt<bool>| {
+        Function::new(
+            ctx.clone(),
+            Async(move |spec: String, value: String, wor: Opt<bool>| {
                 let (p, inner) = (p.clone(), inner.clone());
                 async move {
                     let (uuid, fmt) = match parse_uuid_spec(&spec) {
@@ -909,34 +929,34 @@ fn device_into_js<'js>(
                         Err(e) => return JsOutcome::err(e),
                     };
                     let Some(ch) = available.iter().find(|c| c.uuid == uuid) else {
-                        return JsOutcome::err(format!(
-                            "characteristic {uuid} not found (enumerate first?)"
-                        ));
+                        return JsOutcome::err(format!("characteristic {uuid} not found (enumerate first?)"));
                     };
                     match p.write(ch, &bytes, write_type).await {
                         Ok(()) => JsOutcome::empty(),
                         Err(e) => JsOutcome::err(format!("write {uuid} failed: {e}")),
                     }
                 }
-            },
-        ))?
+            }),
+        )?
     };
 
     let update_rssi = {
         let (p, inner) = (peripheral.clone(), inner.clone());
-        Function::new(ctx.clone(), Async(move || {
-            let (p, inner) = (p.clone(), inner.clone());
-            async move {
-                inner.lock().await.update_rssi(&p).await;
-                JsOutcome::<String>::empty()
-            }
-        }))?
+        Function::new(
+            ctx.clone(),
+            Async(move || {
+                let (p, inner) = (p.clone(), inner.clone());
+                async move {
+                    inner.lock().await.update_rssi(&p).await;
+                    JsOutcome::<String>::empty()
+                }
+            }),
+        )?
     };
 
     // notifications(as_array_buffer?) -> breakable async-iterable (returns sync)
     let notifications = {
-        let (peripheral, decode, cancels) =
-            (peripheral.clone(), notify_decode.clone(), notif_cancels.clone());
+        let (peripheral, decode, cancels) = (peripheral.clone(), notify_decode.clone(), notif_cancels.clone());
         Function::new(
             ctx.clone(),
             move |ctx: Ctx<'js>, as_array_buffer: Opt<bool>| -> JsResult<Object<'js>> {
