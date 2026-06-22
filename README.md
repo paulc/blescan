@@ -118,10 +118,13 @@ These can be combined, and all share the same JS context so objects defined in
 one JS call are available in subsequent ones. This allows you to define utility
 functions in a file and then run a REPL with these functions available using
 `blescan js --file utility.js --repl`, or call a function defined in a separate
-file from the command line using --call.
+file from the command line using `--call`.
 
 Note that QuickJS doesnt support top-level await (and almost all of the BLE
-related functions are async) so in most cases you need to define an async functiopn (or IIFE) or use .then().
+related functions are async) so in most cases you need to define an async 
+functiopn (or IIFE) or handle the promises manually using `.then()`. The 
+runtime will attempt to complete pending tasks on exit (can be interrupted
+with Ctrl-C).
 
 In REPL more you can use the `--resolve-promise` flag to automatically resolve
 promises when they are reurned from REPL commands, this is handy for
@@ -129,9 +132,9 @@ interactive experiments but note that this can block the Ctrl-C handler if you
 are in an async loop.
 
 The `scan({ rssi?, name?|names?, device?|devices?, filter_seen? })` function 
-returns an async iterator returning `{ device, done }`.
+returns an async iterator returning `device`.
 
-The `device` object provides teh following methods:
+The `device` object provides the following methods:
 
 ```
     async device.connect()
@@ -155,12 +158,11 @@ The `device` object provides teh following methods:
     async device.on_notification(cb, asArrayBuffer?) -> stop_fn
         // Call callback with notification data 
 
-For examples of the scripting API see exaples section below or the examples in the `./scripts/` directory
-
 ```
+
+For examples of the scripting API see exaples section below or the examples in
+the `./scripts/` directory
     
-
-
 ## Usage
 
 ```
