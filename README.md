@@ -110,9 +110,9 @@ You can pass the json file from stdin using `blescan run -- -`.
 In JavaScript mode (`blescan js`) a QuickJS scripting environment (using
 rquickjs) is available which provides a BLE `scan` function and `device` object
 to allow custom processing. The JS environment supports execution of script
-files (`blescan js --file <file>`), literal javascript (`blescan js --script
-<script>`), a REPL (`blescan js --repl`), or call JS functions with an optional
-JSON argument (`blescan js --call f --arg '{ "a":1 }'`). 
+files (`blescan js --file <file>`), literal javascript (`blescan js --script <script>`),
+a REPL (`blescan js --repl`), or call JS functions with an optional JSON 
+argument (`blescan js --call f --arg '{ "a":1 }'`). 
 
 These can be combined, and all share the same JS context so objects defined in
 one JS call are available in subsequent ones. This allows you to define utility
