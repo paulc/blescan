@@ -419,10 +419,21 @@ blescan js \
 
 Subscribe to NOTIFY characteristic
 ```
-blescan js \
-    --script 'const cb = async (dev) => { dev.connect().then(async () => { await dev.enumerate(); await dev.subscribe(["00000003-9b04-4347-98ff-57e8f7803509::struct<f32,f32>"]); await dev.on_notification((n) => console.log(n)) })}' \
-    --script 'const scanner = async (names) => { for await (const dev of scan({ names, filter_seen: true })) { cb(dev) }}' \
-    --call scanner --arg '["INA219"]'
+blescan js --file - <<EOM
+    const scanner = async (names,cb) => {
+        for await (const dev of scan({ names, filter_seen: true })) {
+                cb(dev);
+        }
+    }
+    const subscribe_cb = async (dev) => {
+        dev.connect().then(async () => {
+            await dev.enumerate();
+            await dev.subscribe(["00000003-9b04-4347-98ff-57e8f7803509::struct<f32,f32>"]);
+            await dev.on_notification((n) => console.log(n));
+        })
+    }
+    scanner(["INA219"],subscribe_cb);
+EOM
 ```
 
 ## Building
