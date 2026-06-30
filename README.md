@@ -50,11 +50,13 @@ The `dump` command supports filtering by event type and device id:
 ## Decoding/Encoding
 
 Characteristic data can be decoded by specifying the data format using the
-`--decode <uuid::format>` flag (format can be: bool, utf8, f32/64, u8/16/32/64,
-i8/16/32/64). 
+`--decode <uuid::format>` flag, format can be: bool, f32/64, u8/16/32/64,
+i8/16/32/64, utf8, bytes (hex-encoded). 
 
-The data format can also be specified as a struct of the above formats using 
-`struct<u32,u8,...>`.
+To decode a struct `format` can be a comma separated list for formats
+(utf8/bytes read until the of the data, other formats read the appropriate 
+number of bytes. The decoder always returns a list so if there is only 
+one format this will still be returned as a list.
 
 If no format is matched then the raw hex output is shown.
 
@@ -63,10 +65,11 @@ one or more files containing line separated decode definitions can be specified
 using `--decode-file <file>` (blank and comment lines allowed).
 
 Characteristic data can be encoded for the `write` command using the format
-`--characteristic <uuid::data[_format]>`.
+`--characteristic <uuid::format=data>`.
 
-If format is specified (same formats as decode) then the data is encoded 
-using this format, if no format is specified data is assumed to be hex bytes.
+If format is specified (same formats as decode) then the data is encoded using
+this format (fields are comma separated), if no format is specified data is
+assumed to be hex bytes.
 
 ## Run
 
@@ -263,12 +266,11 @@ Options:
   --name            device name
   --device          device id
   --service         service uuid
-  --characteristic  write characteristic - characteristic_uuid::data[_type]
-                    (will exit after all characteristics are written - in case
-                    of multiple matching devices this may cause unexpected
-                    results. Use the --name/ --device/--service filters to limit
-                    device matches). (Note that this does not handle partial
-                    writes)
+  --characteristic  write characteristic - characteristic_uuid::type=data (will
+                    exit after all characteristics are written - in case of
+                    multiple matching devices this may cause unexpected results.
+                    Use the --name/ --device/--service filters to limit device
+                    matches). (Note that this does not handle partial writes)
   --rssi            minimum RSSI
   --timeout         scan timeout
   --without-response
@@ -375,12 +377,17 @@ blescan notify --name "HeartRate" --service 0x180d
 
 Write hex data:
 ```
-blescan write --name "LED" --characteristic "0x2a56::ff00"
+blescan write --name "LED" --characteristic "0x2a56=ff00"
 ```
 
 Write with type suffix:
 ```
-blescan write --name "Config" --characteristic "0x2a57::100_u16"
+blescan write --name "Config" --characteristic "0x2a57::u8,u8=10,20"
+```
+
+Write-read (use different format for decode)
+```
+blescan write-read --name "Config" --characteristic "0x2a57::u8,u8=10,20" --decode "0x2a57::u16"
 ```
 
 Decode values during read:

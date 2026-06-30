@@ -590,7 +590,7 @@ fn build_notifications_iterable<'js>(
                         // Decode if a format was registered at subscribe time.
                         let decoded = {
                             let map = decode.lock().unwrap();
-                            map.get(&n.uuid).and_then(|f| f.decode_value(&n.value).ok())
+                            map.get(&n.uuid).and_then(|f| f.decode(&n.value).ok())
                         };
                         let value = match decoded {
                             Some(v) => CharValue::Decoded(v),
@@ -790,7 +790,7 @@ fn device_into_js<'js>(ctx: &Ctx<'js>, peripheral: Peripheral, info: DeviceInfo)
                             Err(e) => return JsOutcome::err(format!("read {uuid} failed: {e}")),
                         };
                         let val = match fmt {
-                            Some(f) => match f.decode_value(&bytes) {
+                            Some(f) => match f.decode(&bytes) {
                                 Ok(v) => CharValue::Decoded(v),
                                 Err(_) => CharValue::Raw(bytes), // fall back to raw
                             },

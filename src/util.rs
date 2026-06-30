@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 
-use crate::characteristic_data::{CharData, CharFormat};
+use crate::characteristic_data::CharFormat;
 
 pub fn serialize_hex<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -140,16 +140,21 @@ pub fn parse_decoder(decoders: &[String]) -> anyhow::Result<HashMap<Uuid, CharFo
         .context("Error Parsing Decode Mapping")
 }
 
+/// Pares write in format: uuid::fmt=data or uuid::data
 pub fn parse_write(characteristics: &[String]) -> anyhow::Result<Arc<HashMap<Uuid, Vec<u8>>>> {
     Ok(Arc::new(
         characteristics
             .iter()
             .map(|s| {
-                s.split_once("::").context("Invalid Format").and_then(|(uuid, data)| {
-                    let uuid = parse_uuid(uuid)?;
-                    let data = CharData::try_from(data)?.as_slice().to_vec();
-                    Ok((uuid, data))
-                })
+                let (uuid, data) = s.split_once("=").ok_or_else(|| anyhow::anyhow!("Invalid write data"))?;
+                let (uuid, fmt) = if let Some((uuid, fmt)) = uuid.split_once("::") {
+                    (uuid, CharFormat::try_from(fmt)?)
+                } else {
+                    (uuid, CharFormat::default())
+                };
+                let uuid = parse_uuid(uuid)?;
+                let data = fmt.parse(data)?;
+                Ok::<(Uuid, Vec<u8>), anyhow::Error>((uuid, data.as_slice().to_vec()))
             })
             .collect::<Result<HashMap<_, _>, _>>()
             .context("Error Parsing Write Data")?,
@@ -178,5 +183,28 @@ where
             eprintln!("Listening for BLE advertisements: Ctrl+C to stop");
         }
         task.await.map_err(|e| anyhow::anyhow!("Scan Error: {e}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_write() {
+        let chars = [
+            "0x0001=000102".to_string(),
+            "0x0002::u8=255".to_string(),
+            "0x0003::utf8=AAAA".to_string(),
+            "0x0004::u8,u16,u32=0,1,2".to_string(),
+        ];
+        let out = parse_write(&chars).unwrap();
+        assert_eq!(out.get(&parse_uuid("0x0001").unwrap()), Some(&vec![0, 1, 2]));
+        assert_eq!(out.get(&parse_uuid("0x0002").unwrap()), Some(&vec![255]));
+        assert_eq!(out.get(&parse_uuid("0x0003").unwrap()), Some(&vec![65, 65, 65, 65]));
+        assert_eq!(
+            out.get(&parse_uuid("0x0004").unwrap()),
+            Some(&vec![0, 1, 0, 2, 0, 0, 0])
+        );
     }
 }

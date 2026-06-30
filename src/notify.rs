@@ -52,7 +52,7 @@ pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
                     while let Some(notification) = notification_stream.next().await {
                         let decoded = decode_map
                             .get(&notification.uuid)
-                            .and_then(|fmt| fmt.decode_value(&notification.value).ok());
+                            .and_then(|fmt| fmt.decode(&notification.value).ok());
                         let n = NotificationData {
                             service: notification.service_uuid,
                             characteristic: notification.uuid,

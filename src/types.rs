@@ -280,7 +280,7 @@ impl CharacteristicInfo {
             self.decoded = self
                 .value
                 .as_ref()
-                .and_then(|v| decode_map.get(&self.uuid).and_then(|fmt| fmt.decode_value(v).ok()))
+                .and_then(|v| decode_map.get(&self.uuid).and_then(|fmt| fmt.decode(v).ok()))
         }
         Ok(())
     }

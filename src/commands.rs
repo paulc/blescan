@@ -272,7 +272,7 @@ pub struct WriteArgs {
     #[serde(default)]
     pub service: Vec<String>,
 
-    /// write characteristic - characteristic_uuid::data[_type]
+    /// write characteristic - characteristic_uuid::type=data
     /// (will exit after all characteristics are written - in case of multiple
     /// matching devices this may cause unexpected results. Use the --name/
     /// --device/--service filters to limit device matches).
