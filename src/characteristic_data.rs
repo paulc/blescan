@@ -101,15 +101,15 @@ impl CharFormat {
         Ok(data)
     }
     pub fn encode_value(&self, v: &Value) -> anyhow::Result<CharData> {
-        let mut _data = CharData::empty();
+        let mut data = CharData::empty();
         let values = v.as_array().ok_or_else(|| anyhow::anyhow!("Error: Expected Array"))?;
         if values.len() != self.0.len() {
             anyhow::bail!("Error: Invalid Array Length");
         }
         for (f, v) in self.0.iter().zip(values.iter()) {
-            println!("{f:?} {v:?} -> {:?}", CharData::parse_value(f, v));
+            data.push(&CharData::parse_value(f, v)?);
         }
-        anyhow::bail!("")
+        Ok(data)
     }
     pub fn fields<'a>(&'a self) -> &'a [Field] {
         &self.0
@@ -403,13 +403,15 @@ mod tests {
     }
     #[test]
     fn test_char_format_parse_value() {
-        for (f, v) in [(
-            "u8,u16,u32,f32,bool,utf8,bytes",
-            r#"[55,66,77,123.45,true,"Hello","0x4141"]"#,
+        for (f, v, d) in [(
+            "u8,u16,u32,bool,utf8,bytes",
+            r#"[55,66,77,true,"Hello","0x4141"]"#,
+            vec![55, 66, 0, 77, 0, 0, 0, 1, 72, 101, 108, 108, 111, 65, 65],
         )] {
             let f = CharFormat::try_from(f).unwrap();
             let v = serde_json::from_str(v).unwrap();
-            println!(">> {:?}", f.encode_value(&v));
+            // println!(">> {:?}", f.encode_value(&v));
+            assert_eq!(f.encode_value(&v).unwrap().as_slice(), d.as_slice());
         }
     }
     #[test]
