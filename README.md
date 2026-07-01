@@ -53,10 +53,10 @@ Characteristic data can be decoded by specifying the data format using the
 `--decode <uuid::format>` flag, format can be: bool, f32/64, u8/16/32/64,
 i8/16/32/64, utf8, bytes (hex-encoded). 
 
-To decode a struct `format` can be a comma separated list for formats
+To decode a struct `format` can be a comma separated list of formats
 (utf8/bytes read until the of the data, other formats read the appropriate 
-number of bytes. The decoder always returns a list so if there is only 
-one format this will still be returned as a list.
+number of bytes). The decoder always returns a list so if there is only 
+one struct element this will still be returned as a list.
 
 If no format is matched then the raw hex output is shown.
 
@@ -130,8 +130,8 @@ runtime will attempt to complete pending tasks on exit (can be interrupted
 with Ctrl-C).
 
 In REPL more you can use the `--resolve-promise` flag to automatically resolve
-promises when they are reurned from REPL commands, this is handy for
-interactive experiments but note that this can block the Ctrl-C handler if you
+promises when they are returned from REPL commands, this is handy for
+interactive testing but note that this can block the Ctrl-C handler if you
 are in an async loop. 
 
 The `scan({ rssi?, name?|names?, device?|devices?, filter_seen? })` function 
@@ -145,6 +145,7 @@ The `device` object provides the following methods:
     async device.enumerate()
     async device.read([characteristic,..], as_array_buffer?) -> { uuid: value }
         // chars: ["uuid"] or ["uuid::fmt"]; fmt decodes, otherwise hex / ArrayBuffer.
+        // (also supports single characteristic which is automatically wrapped as [])
     async device.write(characteristic, value, withoutResponse?)
         //   characteristic: "uuid" or "uuid::fmt"
         //   value: JS value (scalar) or array 

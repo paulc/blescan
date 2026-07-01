@@ -883,8 +883,7 @@ fn device_into_js<'js>(ctx: &Ctx<'js>, peripheral: Peripheral, info: DeviceInfo)
                 connect:    m("connect"),
                 disconnect: m("disconnect"),
                 enumerate:  m("enumerate"),
-                // Wrap scalar spec in to array
-                read: (spec, asBuf) => raw.read(Array.isArray(spec) ? spec : [spec], asBuf ?? false).then(u2),
+                read: (spec, ...args) => raw.read(Array.isArray(spec) ? spec : [spec], ...args).then(u2),
                 subscribe:  m("subscribe"),
                 unsubscribe: m("unsubscribe"),
                 // write(spec, value, withoutResponse?). With "::fmt" the value is
