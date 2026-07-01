@@ -65,22 +65,15 @@ pub fn format_properties(props: &CharPropFlags) -> String {
 }
 
 pub fn parse_uuid(s: &str) -> Result<uuid::Uuid, uuid::Error> {
+    // Normalise: strip optional 0x prefix, then dispatch on the remaining
+    // hex length (4 => 16-bit, 8 => 32-bit, otherwise a full UUID string).
+    let s = s.strip_prefix("0x").unwrap_or(s);
     if s.len() == 4 {
         // 16-bit UUID
         let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
         uuid::Uuid::parse_str(&full)
-    } else if s.len() == 6 && s.starts_with("0x") {
-        // 16-bit UUID (0x prefix)
-        let s = &s[2..];
-        let full = format!("0000{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
-        uuid::Uuid::parse_str(&full)
     } else if s.len() == 8 {
         // 32-bit UUID
-        let full = format!("{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
-        uuid::Uuid::parse_str(&full)
-    } else if s.len() == 10 && s.starts_with("0x") {
-        // 32-bit UUID (0x prefix)
-        let s = &s[2..];
         let full = format!("{}-0000-1000-8000-00805f9b34fb", s.to_lowercase());
         uuid::Uuid::parse_str(&full)
     } else {
@@ -189,6 +182,26 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_uuid() {
+        let full16 = "00002a24-0000-1000-8000-00805f9b34fb";
+        // 16-bit, with and without 0x prefix
+        assert_eq!(parse_uuid("2a24").unwrap(), parse_uuid(full16).unwrap());
+        assert_eq!(parse_uuid("0x2a24").unwrap(), parse_uuid(full16).unwrap());
+        // 32-bit
+        let full32 = "12345678-0000-1000-8000-00805f9b34fb";
+        assert_eq!(parse_uuid("12345678").unwrap(), parse_uuid(full32).unwrap());
+        assert_eq!(parse_uuid("0x12345678").unwrap(), parse_uuid(full32).unwrap());
+        // Full UUID passthrough (case-insensitive)
+        assert_eq!(
+            parse_uuid("00002A24-0000-1000-8000-00805F9B34FB").unwrap(),
+            parse_uuid(full16).unwrap()
+        );
+        // Invalid
+        assert!(parse_uuid("0x2a").is_err()); // 2 hex digits -> not 16/32-bit, not a full uuid
+        assert!(parse_uuid("nope").is_err());
+    }
 
     #[test]
     fn test_parse_write() {

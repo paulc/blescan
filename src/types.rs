@@ -139,7 +139,9 @@ impl DeviceInfo {
         }
     }
 
-    /// Read data for filtered characteristics
+    /// Read data for filtered characteristics. Reads every readable
+    /// characteristic; per-characteristic failures are reported to stderr
+    /// but do not abort the remaining reads.
     pub async fn read(
         &mut self,
         peripheral: &Peripheral,
@@ -147,8 +149,8 @@ impl DeviceInfo {
     ) -> anyhow::Result<()> {
         for service in self.services.values_mut() {
             for characteristic in service.characteristics.values_mut() {
-                if characteristic.read(peripheral, decode_map).await.is_err() {
-                    anyhow::bail!("Error reading characteristic data: {}", characteristic.uuid);
+                if let Err(e) = characteristic.read(peripheral, decode_map).await {
+                    eprintln!("Error reading characteristic {}: {}", characteristic.uuid, e);
                 }
             }
         }

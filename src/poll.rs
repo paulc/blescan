@@ -33,18 +33,18 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
             join_set.spawn(async move {
                 // Limit running tasks using semaphore
                 let _permit = task_semaphore.acquire().await?;
-                device.connect(&peripheral).await?;
-                device
-                    .enumerate(&peripheral, &service_filter, &characteristic_filter)
-                    .await?;
-                let mut ticker = tokio::time::interval(Duration::from_millis((interval * 1000.0) as u64));
-                if (service_filter.is_empty() && characteristic_filter.is_empty()) || !device.services.is_empty() {
-                    let e = {
+                let result = async {
+                    device.connect(&peripheral).await?;
+                    device
+                        .enumerate(&peripheral, &service_filter, &characteristic_filter)
+                        .await?;
+                    let mut ticker = tokio::time::interval(Duration::from_millis((interval * 1000.0) as u64));
+                    if (service_filter.is_empty() && characteristic_filter.is_empty()) || !device.services.is_empty() {
                         // First tick returns immediately
                         loop {
                             ticker.tick().await;
                             if let Err(e) = device.read(&peripheral, &decode_map).await {
-                                break e;
+                                break Err(e);
                             };
                             if json {
                                 println!("{}", serde_json::to_string(&device).unwrap())
@@ -52,11 +52,14 @@ pub async fn run(central: Adapter, args: PollArgs) -> anyhow::Result<()> {
                                 print!("[+] Device: {}", device)
                             }
                         }
-                    };
-                    Err::<(), anyhow::Error>(e)
-                } else {
-                    Ok::<(), anyhow::Error>(())
-                }
+                    } else {
+                        Ok::<(), anyhow::Error>(())
+                    }
+                }.await;
+                // Always disconnect so the peripheral isn't left connected
+                // when the poll loop ends (read error, timeout, or task drop).
+                let _ = device.disconnect(&peripheral).await;
+                result
             });
         }
 

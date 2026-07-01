@@ -35,39 +35,44 @@ pub async fn run(central: Adapter, args: NotifyArgs) -> anyhow::Result<()> {
             join_set.spawn(async move {
                 // Limit running tasks using semaphore
                 let _permit = task_semaphore.acquire().await?;
-                device.connect(&peripheral).await?;
-                device
-                    .enumerate(&peripheral, &service_filter, &characteristic_filter)
-                    .await?;
-                let subscriptions = device.subscribe(&peripheral).await?;
-                for s in &subscriptions {
-                    if json {
-                        println!("{}", json!({ "subscription": s }));
-                    } else {
-                        println!("{}", s)
-                    }
-                }
-                if !subscriptions.is_empty() {
-                    let mut notification_stream = peripheral.notifications().await?;
-                    while let Some(notification) = notification_stream.next().await {
-                        let decoded = decode_map
-                            .get(&notification.uuid)
-                            .and_then(|fmt| fmt.decode(&notification.value).ok());
-                        let n = NotificationData {
-                            service: notification.service_uuid,
-                            characteristic: notification.uuid,
-                            value: notification.value,
-                            decoded,
-                        };
+                let result = async {
+                    device.connect(&peripheral).await?;
+                    device
+                        .enumerate(&peripheral, &service_filter, &characteristic_filter)
+                        .await?;
+                    let subscriptions = device.subscribe(&peripheral).await?;
+                    for s in &subscriptions {
                         if json {
-                            println!("{}", json!({ "notification" : n}));
+                            println!("{}", json!({ "subscription": s }));
                         } else {
-                            println!("{}", n);
+                            println!("{}", s)
                         }
                     }
-                }
-
-                Ok(())
+                    if !subscriptions.is_empty() {
+                        let mut notification_stream = peripheral.notifications().await?;
+                        while let Some(notification) = notification_stream.next().await {
+                            let decoded = decode_map
+                                .get(&notification.uuid)
+                                .and_then(|fmt| fmt.decode(&notification.value).ok());
+                            let n = NotificationData {
+                                service: notification.service_uuid,
+                                characteristic: notification.uuid,
+                                value: notification.value,
+                                decoded,
+                            };
+                            if json {
+                                println!("{}", json!({ "notification" : n}));
+                            } else {
+                                println!("{}", n);
+                            }
+                        }
+                    }
+                    Ok::<(), anyhow::Error>(())
+                }.await;
+                // Always disconnect so the peripheral isn't left subscribed/
+                // connected when the task ends (stream closed, timeout, or error).
+                let _ = device.disconnect(&peripheral).await;
+                result
             });
         }
 

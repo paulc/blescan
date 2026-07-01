@@ -884,8 +884,8 @@ fn device_into_js<'js>(ctx: &Ctx<'js>, peripheral: Peripheral, info: DeviceInfo)
                 disconnect: m("disconnect"),
                 enumerate:  m("enumerate"),
                 read: (spec, ...args) => raw.read(Array.isArray(spec) ? spec : [spec], ...args).then(u2),
-                subscribe:  m("subscribe"),
-                unsubscribe: m("unsubscribe"),
+                subscribe:  (spec, ...args) => raw.subscribe(Array.isArray(spec) ? spec : [spec], ...args).then(u),
+                unsubscribe: (spec, ...args) => raw.unsubscribe(Array.isArray(spec) ? spec : [spec], ...args).then(u),
                 // write(spec, value, withoutResponse?). With "::fmt" the value is
                 // sent as JSON for CharFormat::encode_value, which expects an array
                 // of field values; a lone scalar is wrapped so write("x::u32", 1)
