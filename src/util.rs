@@ -153,7 +153,7 @@ pub fn parse_write(characteristics: &[String]) -> anyhow::Result<Arc<HashMap<Uui
                     (uuid, CharFormat::default())
                 };
                 let uuid = parse_uuid(uuid)?;
-                let data = fmt.parse(data)?;
+                let data = fmt.encode_str(data)?;
                 Ok::<(Uuid, Vec<u8>), anyhow::Error>((uuid, data.as_slice().to_vec()))
             })
             .collect::<Result<HashMap<_, _>, _>>()

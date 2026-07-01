@@ -86,7 +86,7 @@ impl CharFormat {
         }
         Ok(serde_json::to_value(out)?)
     }
-    pub fn parse(&self, s: &str) -> anyhow::Result<CharData> {
+    pub fn encode_str(&self, s: &str) -> anyhow::Result<CharData> {
         let mut s = s;
         let mut data = CharData::empty();
         for f in self.0.iter() {
@@ -99,6 +99,17 @@ impl CharFormat {
             }
         }
         Ok(data)
+    }
+    pub fn encode_value(&self, v: &Value) -> anyhow::Result<CharData> {
+        let mut _data = CharData::empty();
+        let values = v.as_array().ok_or_else(|| anyhow::anyhow!("Error: Expected Array"))?;
+        if values.len() != self.0.len() {
+            anyhow::bail!("Error: Invalid Array Length");
+        }
+        for (f, v) in self.0.iter().zip(values.iter()) {
+            println!("{f:?} {v:?} -> {:?}", CharData::parse_value(f, v));
+        }
+        anyhow::bail!("")
     }
     pub fn fields<'a>(&'a self) -> &'a [Field] {
         &self.0
@@ -221,11 +232,13 @@ macro_rules! parse_int_type {
     }};
 }
 
-impl TryFrom<&str> for CharData {
-    type Error = CharDataError;
-    fn try_from(/* XXX */ _value: &str) -> Result<Self, Self::Error> {
-        Ok(CharData::empty())
-    }
+macro_rules! value_to_int_type {
+    ($value:expr, $int_type:ty) => {{
+        (match $value.as_number().and_then(|v| v.as_i64()) {
+            Some(n) => Ok(CharData::from(n as $int_type)),
+            None => Err(CharDataError::Format("Invalid Number".into())),
+        })
+    }};
 }
 
 impl CharData {
@@ -306,6 +319,46 @@ impl CharData {
         };
         Ok((data, rest))
     }
+    pub fn parse_value<'a>(fmt: &Field, v: &'a Value) -> Result<CharData, CharDataError> {
+        match fmt {
+            Field::Bool => match v.as_bool() {
+                Some(true) => Ok(CharData(vec![1_u8])),
+                Some(false) => Ok(CharData(vec![0_u8])),
+                None => Err(CharDataError::Format("Invalid Bool".into())),
+            },
+            Field::U8 => value_to_int_type!(v, u8),
+            Field::I8 => value_to_int_type!(v, i8),
+            Field::U16 => value_to_int_type!(v, u16),
+            Field::I16 => value_to_int_type!(v, i16),
+            Field::U32 => value_to_int_type!(v, u32),
+            Field::I32 => value_to_int_type!(v, i32),
+            Field::U64 => value_to_int_type!(v, u64),
+            Field::I64 => value_to_int_type!(v, i64),
+            Field::F32 => match v.as_number().and_then(|v| v.as_f64()) {
+                Some(f) => Ok(CharData::from(f as f32)),
+                None => Err(CharDataError::Format("Invalid F32".into())),
+            },
+            Field::F64 => match v.as_number().and_then(|v| v.as_f64()) {
+                Some(f) => Ok(CharData::from(f)),
+                None => Err(CharDataError::Format("Invalid F64".into())),
+            },
+            Field::Utf8 => match v.as_str() {
+                Some(s) => Ok(CharData(s.as_bytes().to_vec())),
+                None => Err(CharDataError::Format("Invalid String".into())),
+            },
+            Field::Bytes => match v.as_str() {
+                Some(s) => {
+                    let data = if let Some(s) = s.strip_prefix("0x") {
+                        hex::decode(s).map_err(CharDataError::ParseHex)?
+                    } else {
+                        hex::decode(s).map_err(CharDataError::ParseHex)?
+                    };
+                    Ok(CharData(data))
+                }
+                None => Err(CharDataError::Format("Invalid String".into())),
+            },
+        }
+    }
 }
 
 #[cfg(test)]
@@ -343,9 +396,20 @@ mod tests {
             ("bytes", "0x0A0B0C", vec![10, 11, 12]),
             ("bool,bool", "true,false", vec![1, 0]),
         ] {
-            let res = CharFormat::try_from(s).unwrap().parse(v);
+            let res = CharFormat::try_from(s).unwrap().encode_str(v);
             // println!("{s} {v} -> {res:?}");
             assert_eq!(res.unwrap().as_slice(), d.as_slice());
+        }
+    }
+    #[test]
+    fn test_char_format_parse_value() {
+        for (f, v) in [(
+            "u8,u16,u32,f32,bool,utf8,bytes",
+            r#"[55,66,77,123.45,true,"Hello","0x4141"]"#,
+        )] {
+            let f = CharFormat::try_from(f).unwrap();
+            let v = serde_json::from_str(v).unwrap();
+            println!(">> {:?}", f.encode_value(&v));
         }
     }
     #[test]
