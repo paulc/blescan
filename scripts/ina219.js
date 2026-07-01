@@ -17,7 +17,7 @@ const ina219 = async ({json = false, showServices = false} = {}) => {
   // Write to timer characteristic - update NOTIFY timer to 1s
   await dev.write("00000005-9b04-4347-98ff-57e8f7803509::u32",1);
   // Subscribe to V/I updates
-  await dev.subscribe(["00000003-9b04-4347-98ff-57e8f7803509::struct<f32,f32>"]);
+  await dev.subscribe(["00000003-9b04-4347-98ff-57e8f7803509::f32,f32"]);
   // Install notification handler
   const n = dev.on_notification((n) => {
     const now = new Date().toISOString();

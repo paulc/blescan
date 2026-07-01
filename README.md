@@ -132,7 +132,7 @@ with Ctrl-C).
 In REPL more you can use the `--resolve-promise` flag to automatically resolve
 promises when they are reurned from REPL commands, this is handy for
 interactive experiments but note that this can block the Ctrl-C handler if you
-are in an async loop.
+are in an async loop. 
 
 The `scan({ rssi?, name?|names?, device?|devices?, filter_seen? })` function 
 returns an async iterator returning `device`.
@@ -147,7 +147,7 @@ The `device` object provides the following methods:
         // chars: ["uuid"] or ["uuid::fmt"]; fmt decodes, otherwise hex / ArrayBuffer.
     async device.write(characteristic, value, withoutResponse?)
         //   characteristic: "uuid" or "uuid::fmt"
-        //   value: with "::fmt", a JS value (scalar) or array (for struct<...>),
+        //   value: JS value (scalar) or array 
         //          passed through as JSON; without a fmt, the JS shim has already
         //          normalised a hex string / ArrayBuffer / Uint8Array to hex.
     async device.updateRssi()
@@ -397,7 +397,7 @@ blescan enumerate --read --decode "0x2a1c::i16"
 
 Decode struct (decodes org.bluetooth.characteristic.current_time into YYYY,MM,DD,HH,MM,SS):
 ```
-blescan enumerate --read --service 0x1805 --characteristic 0x2a2b --decode '0x2a2b::struct<u16,u8,u8,u8,u8,u8>'
+blescan enumerate --read --service 0x1805 --characteristic 0x2a2b --decode '0x2a2b::u16,u8,u8,u8,u8,u8'
 
 ```
 
@@ -435,12 +435,23 @@ blescan js --file - <<EOM
     const subscribe_cb = async (dev) => {
         dev.connect().then(async () => {
             await dev.enumerate();
-            await dev.subscribe(["00000003-9b04-4347-98ff-57e8f7803509::struct<f32,f32>"]);
+            await dev.subscribe(["00000003-9b04-4347-98ff-57e8f7803509::f32,f32"]);
             await dev.on_notification((n) => console.log(n));
         })
     }
     scanner(["INA219"],subscribe_cb);
 EOM
+```
+
+Interactively interact with device (using --resolve-promise)
+```
+blescan js --repl --resolve-promise
+>>> const scanner = scan({name:"INA219"})
+>>> scanner.next()
+>>> const dev = _.value
+>>> scanner.close()
+>>> dev.connect()
+>>> dev.enumerate()
 ```
 
 ## Building
