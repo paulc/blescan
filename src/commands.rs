@@ -48,7 +48,7 @@ pub enum Commands {
     Js(JsArgs),
 }
 
-#[derive(FromArgs, Debug, Serialize, Deserialize)]
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
 /// Scan BLE Devices
 #[argh(subcommand, name = "scan")]
 pub struct ScanArgs {
@@ -83,7 +83,7 @@ pub struct ScanArgs {
     pub json: bool,
 }
 
-#[derive(FromArgs, Debug, Serialize, Deserialize)]
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
 /// Enumerate BLE Devices
 #[argh(subcommand, name = "enumerate")]
 pub struct EnumerateArgs {
@@ -144,7 +144,7 @@ pub struct EnumerateArgs {
     pub max: Option<u32>,
 }
 
-#[derive(FromArgs, Debug, Serialize, Deserialize)]
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
 /// Read service data continuously
 #[argh(subcommand, name = "poll")]
 pub struct PollArgs {
@@ -203,7 +203,7 @@ fn default_interval() -> f64 {
     5.0
 }
 
-#[derive(FromArgs, Debug, Serialize, Deserialize)]
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
 /// Subscribe/listen for notify events
 #[argh(subcommand, name = "notify")]
 pub struct NotifyArgs {
@@ -253,7 +253,7 @@ pub struct NotifyArgs {
     pub json: bool,
 }
 
-#[derive(FromArgs, Debug, Serialize, Deserialize)]
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
 /// Write characteristic data
 #[argh(subcommand, name = "write")]
 pub struct WriteArgs {
@@ -301,7 +301,7 @@ pub struct WriteArgs {
     pub json: bool,
 }
 
-#[derive(FromArgs, Debug, Serialize, Deserialize)]
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
 /// Write characteristic data and then read response
 #[argh(subcommand, name = "write-read")]
 pub struct WriteReadArgs {
@@ -364,7 +364,7 @@ pub struct WriteReadArgs {
     pub json: bool,
 }
 
-#[derive(FromArgs, Debug, Serialize, Deserialize)]
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
 /// Dump raw BLE advertisement data
 #[argh(subcommand, name = "dump")]
 pub struct DumpArgs {
@@ -394,7 +394,7 @@ pub struct DumpArgs {
     pub json: bool,
 }
 
-#[derive(FromArgs, Debug, Serialize, Deserialize)]
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
 /// Run JSON command file
 #[argh(subcommand, name = "run")]
 pub struct RunArgs {
@@ -402,7 +402,7 @@ pub struct RunArgs {
     pub path: String,
 }
 
-#[derive(FromArgs, Debug, Serialize, Deserialize)]
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
 /// Run JS script with BLE `scan(opts)` function installed in globals
 ///   `scan({rssi?, name?|names?, device?|devices?, filter_seen? })`
 #[argh(subcommand, name = "js")]
@@ -430,4 +430,39 @@ pub struct JsArgs {
     #[argh(switch)]
     /// REPL resolve top-level promises
     pub resolve_promise: bool,
+
+    #[cfg(feature = "mqtt")]
+    #[argh(switch)]
+    /// enable MQTT
+    pub mqtt: bool,
+
+    #[cfg(feature = "mqtt")]
+    #[argh(option, default = "\"127.0.0.1\".into()")]
+    /// mqtt broker address (default: 127.0.0.1)
+    pub address: String,
+
+    #[cfg(feature = "mqtt")]
+    #[argh(option, default = "1883")]
+    /// mqtt broker port (default: 1883)
+    pub port: u16,
+
+    #[cfg(feature = "mqtt")]
+    #[argh(option)]
+    /// mqtt username
+    pub username: Option<String>,
+
+    #[cfg(feature = "mqtt")]
+    #[argh(option)]
+    /// mqtt password
+    pub password: Option<String>,
+
+    #[cfg(feature = "mqtt")]
+    #[argh(option)]
+    /// mqtt client-id
+    pub client_id: Option<String>,
+
+    #[cfg(feature = "mqtt")]
+    #[argh(switch)]
+    /// use callback mqtt_rx api (mqtt_rx_cb)
+    pub cb: bool,
 }

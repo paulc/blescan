@@ -12,10 +12,41 @@ use rquickjs_utils::{
     utils::{json_to_value, log_v},
 };
 
+#[cfg(feature = "mqtt")]
+use rquickjs_utils::channel::{register_mpsc_rx, register_mpsc_rx_cb, register_mpsc_tx};
+#[cfg(feature = "mqtt")]
+use rquickjs_utils::mqtt_task::{MqttConfig, MqttTask};
+#[cfg(feature = "mqtt")]
+use rquickjs_utils::mqtt_types::{register_mqtt, MqttCommand, MqttEvent};
+#[cfg(feature = "mqtt")]
+use tokio::sync::mpsc;
+
 use crate::bridge;
 use crate::commands::JsArgs;
 
 static USER_EXIT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "mqtt")]
+async fn start_mqtt(
+    args: JsArgs,
+) -> anyhow::Result<(mpsc::UnboundedSender<MqttCommand>, mpsc::UnboundedReceiver<MqttEvent>)> {
+    // Create MQTT configuration
+    let config = MqttConfig {
+        broker_addr: args.address,
+        broker_port: args.port,
+        client_id: args
+            .client_id
+            .unwrap_or(format!("mqtt_client_{}", uuid::Uuid::new_v4())),
+        username: args.username,
+        password: args.password,
+        ..Default::default()
+    };
+    // Start the MQTT task and return Sender/Receiver
+    MqttTask::new(config)
+        .start()
+        .await
+        .map_err(|e| anyhow::anyhow!("MqttTask: {e}"))
+}
 
 pub async fn run(central: Adapter, args: JsArgs) -> anyhow::Result<()> {
     tokio::spawn(async move {
@@ -23,6 +54,14 @@ pub async fn run(central: Adapter, args: JsArgs) -> anyhow::Result<()> {
         eprintln!("[+] User Exit",);
         USER_EXIT.store(true, Ordering::Relaxed);
     });
+
+    // Start MQTT connection if mqtt feature & cli option enabled
+    #[cfg(feature = "mqtt")]
+    let mqtt_chans = if args.mqtt {
+        Some(start_mqtt(args.clone()).await?)
+    } else {
+        None
+    };
 
     let rt = AsyncRuntime::new()?;
     let ctx = AsyncContext::full(&rt).await?;
@@ -39,6 +78,20 @@ pub async fn run(central: Adapter, args: JsArgs) -> anyhow::Result<()> {
 
         // Install BLE scan
         bridge::install_scan(&ctx, central)?;
+
+        #[cfg(feature = "mqtt")]
+        {
+            // Register MQTT objects if cli option enabled
+            if let Some((command_tx, event_rx)) = mqtt_chans {
+                register_mqtt(&ctx)?;
+                register_mpsc_tx(ctx.clone(), command_tx, "mqtt_tx")?;
+                if args.cb {
+                    register_mpsc_rx_cb(ctx.clone(), event_rx, "mqtt_rx_cb")?;
+                } else {
+                    register_mpsc_rx(ctx.clone(), event_rx, "mqtt_rx")?;
+                }
+            }
+        }
 
         set_resolve_promise(&ctx, args.resolve_promise)?;
 
