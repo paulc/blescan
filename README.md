@@ -10,6 +10,7 @@ processing.
 | Command | Description |
 |---------|-------------|
 | `scan` | List nearby BLE devices |
+| `monitor` | Monitor nearby BLE devices (tty output, tracks updates)|
 | `enumerate` | Connect and list services/characteristics |
 | `poll` | Continuously read characteristic values |
 | `notify` | Subscribe to notification events |
@@ -186,7 +187,9 @@ Options:
   --help, help      display usage information
 
 Commands:
-  scan              Scan BLE Devices
+  scan              Scan BLE Devices (note that this only shoes the first
+                    DeviceDiscovered message and does not update discovered
+                    devices with DeviceUpdated/ServicesAdvertisement etc)
   enumerate         Enumerate BLE Devices
   poll              Read service data continuously
   write             Write characteristic data
@@ -194,6 +197,7 @@ Commands:
   notify            Subscribe/listen for notify events
   dump              Dump raw BLE advertisement data
   run               Run JSON command file
+  monitor           Monitor BLE Devices (TTY output/tracks device updates)
   js                Run JS script with BLE `scan(opts)` function installed in
                     globals   `scan({{rssi?, name?|names?, device?|devices?,
                     filter_seen? }})`
@@ -203,7 +207,7 @@ Commands:
 ```
 Usage: blescan scan [--name <name...>] [--device <device...>] [--rssi <rssi>] [--timeout <timeout>] [--show-seen] [--json]
 
-Scan BLE Devices
+Scan BLE Devices (note that this only shoes the first DeviceDiscovered message and does not update discovered devices with DeviceUpdated/ServicesAdvertisement etc)
 
 Options:
   --name            filter device name [multiple allowed]
@@ -212,6 +216,22 @@ Options:
   --timeout         scan timeout
   --show-seen       show seen devices
   --json            NDJSON output
+  --help, help      display usage information
+
+```
+
+```
+Usage: blescan monitor [--name <name...>] [--device <device...>] [--rssi <rssi>] [--timeout <timeout>] [--device-timeout <device-timeout>] [--update <update>]
+
+Monitor BLE Devices (TTY output/tracks device updates)
+
+Options:
+  --name            filter device name [multiple allowed]
+  --device          filter device id [multiple allowed]
+  --rssi            minimum RSSI
+  --timeout         scan timeout
+  --device-timeout  device timeout
+  --update          update (ms)
   --help, help      display usage information
 
 ```
@@ -354,6 +374,11 @@ blescan scan
 Scan with filters:
 ```
 blescan scan --name "Sensor" --rssi -70 --timeout 30
+```
+
+Monitor output with 10s device timeout (interactively updating TTY output)
+```
+blescan monitoy --device-timeout 10
 ```
 
 Enumerate services and read values with JSON output:

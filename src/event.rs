@@ -1,5 +1,5 @@
 use crate::types::DeviceInfo;
-use btleplug::api::{bleuuid::BleUuid, Central, CentralEvent, CentralState};
+use btleplug::api::{Central, CentralEvent, CentralState, bleuuid::BleUuid};
 use btleplug::platform::{Adapter, PeripheralId};
 use serde::Serialize;
 use uuid::Uuid;
@@ -144,20 +144,28 @@ impl EventInfo {
             EventInfo::StateUpdate { .. } => None,
         }
     }
+    pub fn get_device_info(&self) -> Option<&DeviceInfo> {
+        match self {
+            EventInfo::DeviceEvent { device, .. }
+            | EventInfo::ManufacturerDataAdvertisement { device, .. }
+            | EventInfo::ServiceDataAdvertisement { device, .. } => Some(&device),
+            EventInfo::StateUpdate { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ServiceData {
-    service_id: Uuid,
+    pub service_id: Uuid,
     #[serde(serialize_with = "serialize_hex")]
-    service_data: Vec<u8>,
+    pub service_data: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ManufacturerData {
-    manufacturer_id: u16,
+    pub manufacturer_id: u16,
     #[serde(serialize_with = "serialize_hex")]
-    manufacturer_data: Vec<u8>,
+    pub manufacturer_data: Vec<u8>,
 }
 
 impl std::fmt::Display for EventInfo {

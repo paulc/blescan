@@ -5,6 +5,7 @@ pub mod dump;
 pub mod enumerate;
 pub mod event;
 pub mod js;
+pub mod monitor;
 pub mod notify;
 pub mod poll;
 pub mod scan;

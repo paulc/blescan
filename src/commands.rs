@@ -33,6 +33,41 @@ pub struct Args {
     pub max_tasks: Option<usize>,
 }
 
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
+/// Monitor BLE Devices (TTY output/tracks device updates)
+#[argh(subcommand, name = "monitor")]
+pub struct MonitorArgs {
+    /// filter device name [multiple allowed]
+    #[argh(option)]
+    #[serde(default)]
+    pub name: Vec<String>,
+
+    /// filter device id [multiple allowed]
+    #[argh(option)]
+    #[serde(default)]
+    pub device: Vec<String>,
+
+    /// minimum RSSI
+    #[argh(option)]
+    #[serde(default)]
+    pub rssi: Option<i16>,
+
+    /// scan timeout
+    #[argh(option)]
+    #[serde(default)]
+    pub timeout: Option<u64>,
+
+    /// device timeout
+    #[argh(option, default = "5")]
+    #[serde(default)]
+    pub device_timeout: u64,
+
+    /// update (ms)
+    #[argh(option, default = "500")]
+    #[serde(default)]
+    pub update: u64,
+}
+
 #[derive(FromArgs, Debug, Serialize, Deserialize)]
 #[argh(subcommand)]
 #[serde(rename_all = "snake_case")]
@@ -45,11 +80,13 @@ pub enum Commands {
     Notify(NotifyArgs),
     Dump(DumpArgs),
     Run(RunArgs),
+    Monitor(MonitorArgs),
     Js(JsArgs),
 }
 
 #[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
-/// Scan BLE Devices
+/// Scan BLE Devices (note that this only shoes the first DeviceDiscovered message
+/// and does not update discovered devices with DeviceUpdated/ServicesAdvertisement etc)
 #[argh(subcommand, name = "scan")]
 pub struct ScanArgs {
     /// filter device name [multiple allowed]
@@ -320,7 +357,7 @@ pub struct WriteReadArgs {
     #[serde(default)]
     pub service: Vec<String>,
 
-    /// write characteristic - characteristic_uuid::data[_type]
+    /// write/read characteristic - characteristic_uuid::type=data
     /// (will exit after all characteristics are written - in case of multiple
     /// matching devices this may cause unexpected results. Use the --name/
     /// --device/--service filters to limit device matches).
