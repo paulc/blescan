@@ -5,8 +5,10 @@ use std::io::Read;
 use std::sync::atomic::Ordering;
 
 use blescan::commands::*;
+#[cfg(feature = "quickjs")]
+use blescan::js;
 use blescan::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, MAX_TASKS, WRITE_TIMEOUT};
-use blescan::{dump, enumerate, js, monitor, notify, poll, scan, write, write_read};
+use blescan::{dump, enumerate, monitor, notify, poll, scan, write, write_read};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -63,10 +65,14 @@ async fn main() -> anyhow::Result<()> {
             Commands::WriteRead(args) => write_read::run(central, args).await?,
             Commands::Dump(args) => dump::run(central, args).await?,
             Commands::Monitor(args) => monitor::run(central, args).await?,
+            #[cfg(feature = "quickjs")]
             Commands::Js(args) => js::run(central, args).await?,
             Commands::Run(_) => anyhow::bail!("Invalid JSON command file: <run> not allowed"),
         },
-        Commands::Js(args) => js::run(central, args).await?,
+        #[cfg(feature = "quickjs")]
+        Commands::Js(args) => {
+            js::run(central, args).await?;
+        }
     }
 
     Ok(())

@@ -1,6 +1,6 @@
 [package]
 name = "blescan"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 
 [lib]
@@ -12,7 +12,9 @@ name = "blescan"
 path = "src/bin/main.rs"
 
 [features]
-mqtt = ["rquickjs_utils/mqtt"]
+default = ["quickjs"]
+quickjs = []
+mqtt = ["quickjs","rquickjs_utils/mqtt"]
 
 [dependencies]
 anyhow = "1.0.102"

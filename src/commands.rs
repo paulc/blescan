@@ -81,6 +81,7 @@ pub enum Commands {
     Dump(DumpArgs),
     Run(RunArgs),
     Monitor(MonitorArgs),
+    #[cfg(feature = "quickjs")]
     Js(JsArgs),
 }
 
