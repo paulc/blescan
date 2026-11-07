@@ -113,10 +113,13 @@ You can pass the json file from stdin using `blescan run -- -`.
 
 In JavaScript mode (`blescan js`) a QuickJS scripting environment (using
 rquickjs) is available which provides a BLE `scan` function and `device` object
-to allow custom processing. The JS environment supports execution of script
-files (`blescan js --file <file>`), literal javascript (`blescan js --script <script>`),
-a REPL (`blescan js --repl`), or call JS functions with an optional JSON 
-argument (`blescan js --call f --arg '{ "a":1 }'`). 
+to allow custom processing (JS mode requires the `quickjs` feature - enabled by
+default - note that you should not allow untrusted JS scripts and disable this
+feature if blescan is remotely accessible). The JS environment supports
+execution of script files (`blescan js --file <file>`), literal javascript
+(`blescan js --script <script>`), a REPL (`blescan js --repl`), or call JS
+functions with an optional JSON argument (`blescan js --call f --arg '{ "a":1
+}'`). 
 
 These can be combined, and all share the same JS context so objects defined in
 one JS call are available in subsequent ones. This allows you to define utility
@@ -190,6 +193,7 @@ Commands:
   scan              Scan BLE Devices (note that this only shoes the first
                     DeviceDiscovered message and does not update discovered
                     devices with DeviceUpdated/ServicesAdvertisement etc)
+  monitor           Monitor BLE Devices (TTY output/tracks device updates)
   enumerate         Enumerate BLE Devices
   poll              Read service data continuously
   write             Write characteristic data
@@ -197,7 +201,6 @@ Commands:
   notify            Subscribe/listen for notify events
   dump              Dump raw BLE advertisement data
   run               Run JSON command file
-  monitor           Monitor BLE Devices (TTY output/tracks device updates)
   js                Run JS script with BLE `scan(opts)` function installed in
                     globals   `scan({{rssi?, name?|names?, device?|devices?,
                     filter_seen? }})`
@@ -218,10 +221,22 @@ Options:
   --json            NDJSON output
   --help, help      display usage information
 
+
+JSON Params:
+    {
+      "scan": {
+        "name": [],
+        "device": [],
+        "rssi": null,
+        "timeout": null,
+        "show_seen": false,
+        "json": false
+      }
+    }
 ```
 
 ```
-Usage: blescan monitor [--name <name...>] [--device <device...>] [--rssi <rssi>] [--timeout <timeout>] [--device-timeout <device-timeout>] [--update <update>]
+Usage: blescan monitor [--name <name...>] [--device <device...>] [--rssi <rssi>] [--timeout <timeout>] [--device-timeout <device-timeout>] [--update <update>] [--json]
 
 Monitor BLE Devices (TTY output/tracks device updates)
 
@@ -232,8 +247,22 @@ Options:
   --timeout         scan timeout
   --device-timeout  device timeout
   --update          update (ms)
+  --json            NDJSON output
   --help, help      display usage information
 
+
+JSON Params:
+    {
+      "monitor": {
+        "name": [],
+        "device": [],
+        "rssi": null,
+        "timeout": null,
+        "device_timeout": 5,
+        "update": 500,
+        "json": false
+      }
+    }
 ```
 
 ```
@@ -256,6 +285,23 @@ Options:
                     multiple matching tasks running in parallel)
   --help, help      display usage information
 
+
+JSON Params:
+    {
+      "enumerate": {
+        "read": false,
+        "name": [],
+        "device": [],
+        "service": [],
+        "characteristic": [],
+        "rssi": null,
+        "timeout": null,
+        "decode": [],
+        "decode_file": [],
+        "json": false,
+        "max": null
+      }
+    }
 ```
 
 ```
@@ -276,6 +322,22 @@ Options:
   --json            NDJSON output
   --help, help      display usage information
 
+
+JSON Params:
+    {
+      "poll": {
+        "interval": 5.0,
+        "name": [],
+        "device": [],
+        "service": [],
+        "characteristic": [],
+        "rssi": null,
+        "timeout": null,
+        "decode": [],
+        "decode_file": [],
+        "json": false
+      }
+    }
 ```
 
 ```
@@ -299,6 +361,20 @@ Options:
   --json            NDJSON output
   --help, help      display usage information
 
+
+JSON Params:
+    {
+      "write": {
+        "name": [],
+        "device": [],
+        "service": [],
+        "characteristic": [],
+        "rssi": null,
+        "timeout": null,
+        "without_response": false,
+        "json": false
+      }
+    }
 ```
 
 ```
@@ -318,6 +394,21 @@ Options:
   --json            NDJSON output
   --help, help      display usage information
 
+
+JSON Params:
+    {
+      "notify": {
+        "name": [],
+        "device": [],
+        "service": [],
+        "characteristic": [],
+        "rssi": null,
+        "timeout": null,
+        "decode": [],
+        "decode_file": [],
+        "json": false
+      }
+    }
 ```
 
 ```
@@ -333,6 +424,17 @@ Options:
   --json            NDJSON output
   --help, help      display usage information
 
+
+JSON Params:
+    {
+      "dump": {
+        "event": [],
+        "device": [],
+        "name": [],
+        "timeout": null,
+        "json": false
+      }
+    }
 ```
 
 ```
@@ -346,6 +448,12 @@ Positional Arguments:
 Options:
   --help, help      display usage information
 
+
+JSON Params:
+    Required positional arguments not provided:
+        path
+
+    Run blescan --help for more information.
 ```
 
 ```
@@ -362,6 +470,18 @@ Options:
   --resolve-promise REPL resolve top-level promises
   --help, help      display usage information
 
+
+JSON Params:
+    {
+      "js": {
+        "file": [],
+        "script": [],
+        "repl": false,
+        "call": [],
+        "arg": [],
+        "resolve_promise": false
+      }
+    }
 ```
 
 ## Examples

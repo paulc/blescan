@@ -33,46 +33,12 @@ pub struct Args {
     pub max_tasks: Option<usize>,
 }
 
-#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
-/// Monitor BLE Devices (TTY output/tracks device updates)
-#[argh(subcommand, name = "monitor")]
-pub struct MonitorArgs {
-    /// filter device name [multiple allowed]
-    #[argh(option)]
-    #[serde(default)]
-    pub name: Vec<String>,
-
-    /// filter device id [multiple allowed]
-    #[argh(option)]
-    #[serde(default)]
-    pub device: Vec<String>,
-
-    /// minimum RSSI
-    #[argh(option)]
-    #[serde(default)]
-    pub rssi: Option<i16>,
-
-    /// scan timeout
-    #[argh(option)]
-    #[serde(default)]
-    pub timeout: Option<u64>,
-
-    /// device timeout
-    #[argh(option, default = "5")]
-    #[serde(default)]
-    pub device_timeout: u64,
-
-    /// update (ms)
-    #[argh(option, default = "500")]
-    #[serde(default)]
-    pub update: u64,
-}
-
 #[derive(FromArgs, Debug, Serialize, Deserialize)]
 #[argh(subcommand)]
 #[serde(rename_all = "snake_case")]
 pub enum Commands {
     Scan(ScanArgs),
+    Monitor(MonitorArgs),
     Enumerate(EnumerateArgs),
     Poll(PollArgs),
     Write(WriteArgs),
@@ -80,7 +46,6 @@ pub enum Commands {
     Notify(NotifyArgs),
     Dump(DumpArgs),
     Run(RunArgs),
-    Monitor(MonitorArgs),
     #[cfg(feature = "quickjs")]
     Js(JsArgs),
 }
@@ -114,6 +79,46 @@ pub struct ScanArgs {
     #[argh(switch)]
     #[serde(default)]
     pub show_seen: bool,
+
+    /// NDJSON output
+    #[argh(switch)]
+    #[serde(default)]
+    pub json: bool,
+}
+
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
+/// Monitor BLE Devices (TTY output/tracks device updates)
+#[argh(subcommand, name = "monitor")]
+pub struct MonitorArgs {
+    /// filter device name [multiple allowed]
+    #[argh(option)]
+    #[serde(default)]
+    pub name: Vec<String>,
+
+    /// filter device id [multiple allowed]
+    #[argh(option)]
+    #[serde(default)]
+    pub device: Vec<String>,
+
+    /// minimum RSSI
+    #[argh(option)]
+    #[serde(default)]
+    pub rssi: Option<i16>,
+
+    /// scan timeout
+    #[argh(option)]
+    #[serde(default)]
+    pub timeout: Option<u64>,
+
+    /// device timeout
+    #[argh(option, default = "5")]
+    #[serde(default)]
+    pub device_timeout: u64,
+
+    /// update (ms)
+    #[argh(option, default = "500")]
+    #[serde(default)]
+    pub update: u64,
 
     /// NDJSON output
     #[argh(switch)]

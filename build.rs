@@ -17,6 +17,17 @@ struct UuidDatabase {
     uuids: Vec<UuidEntry>,
 }
 
+#[derive(Debug, Deserialize)]
+struct CompanyEntry {
+    value: String,
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CompanyDatabase {
+    company_identifiers: Vec<CompanyEntry>,
+}
+
 fn main() {
     // Re-run if the YAML file changes
     println!("cargo:rerun-if-changed=data/service_uuids.yaml");
@@ -91,6 +102,31 @@ static DESCRIPTOR_MAP: std::sync::LazyLock<std::collections::HashMap<uuid::Uuid,
         map.push_str(&format!(
             "            (parse_uuid(\"{}\").unwrap(),\"{}\"),\n",
             entry.uuid, entry.id
+        ));
+    }
+    map.push_str(
+        r#"        ])
+    });
+"#,
+    );
+
+    // Generate BLE company map
+    let company_yaml =
+        fs::read_to_string("data/company_identifiers.yaml").expect("Failed to read company_identifiers.yaml");
+    let company_db: CompanyDatabase = serde_yaml::from_str(&company_yaml).expect("Failed to parse YAML");
+
+    map.push_str(
+        r#"
+static COMPANY_MAP: std::sync::LazyLock<std::collections::HashMap<u16,&'static str>> =
+    std::sync::LazyLock::new(|| {
+        std::collections::HashMap::from([
+"#,
+    );
+    for entry in company_db.company_identifiers.iter() {
+        map.push_str(&format!(
+            "            ({},\"{}\"),\n",
+            u16::from_str_radix(entry.value.trim_start_matches("0x"), 16).expect("Invalid company id"),
+            entry.name.replace("\"", "")
         ));
     }
     map.push_str(

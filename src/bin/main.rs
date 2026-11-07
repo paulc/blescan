@@ -12,7 +12,12 @@ use blescan::{dump, enumerate, monitor, notify, poll, scan, write, write_read};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Get args
+    // Check for --version before parsing args to avoid argh complaining
+    if std::env::args().skip(1).any(|arg| arg == "--version") {
+        println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     let args: Args = argh::from_env();
 
     if args.dump_json {

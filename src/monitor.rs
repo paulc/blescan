@@ -19,7 +19,6 @@ use crate::util::make_regex_filter;
 #[derive(Debug, Clone)]
 struct BleDevice {
     pub device: DeviceInfo,
-    pub manufacturer_data: BTreeMap<u16, ManufacturerData>,
     pub last_seen: Instant,
 }
 
@@ -27,7 +26,6 @@ impl BleDevice {
     pub fn new(device: DeviceInfo) -> Self {
         Self {
             device,
-            manufacturer_data: BTreeMap::new(),
             last_seen: Instant::now(),
         }
     }
@@ -43,6 +41,10 @@ impl BleDevice {
             self.device.services.insert(k.clone(), v.clone());
         });
         self.last_seen = Instant::now();
+    }
+    pub fn update_manufacturer_data(&mut self, md: &ManufacturerData) -> bool {
+        self.device
+            .update_manufacturer_data(md.manufacturer_id, &md.manufacturer_data)
     }
 }
 
@@ -89,15 +91,15 @@ pub async fn run(central: Adapter, args: MonitorArgs) -> anyhow::Result<()> {
                         Entry::Occupied(mut entry) => {
                             let e = entry.get_mut();
                             e.update_device(&device);
-                            manufacturer_data.iter().for_each(|md| {
-                                e.manufacturer_data.insert(md.manufacturer_id, md.clone());
-                            })
+                            for md in &manufacturer_data {
+                                e.update_manufacturer_data(md);
+                            }
                         }
                         Entry::Vacant(entry) => {
                             let mut d = BleDevice::new(device);
-                            manufacturer_data.iter().for_each(|md| {
-                                d.manufacturer_data.insert(md.manufacturer_id, md.clone());
-                            });
+                            for md in &manufacturer_data {
+                                d.update_manufacturer_data(md);
+                            }
                             entry.insert(d);
                         }
                     },
@@ -123,7 +125,9 @@ pub async fn run(central: Adapter, args: MonitorArgs) -> anyhow::Result<()> {
     let display = async {
         loop {
             let now = Instant::now();
-            let _ = Term::stdout().clear_screen();
+            if !args.json {
+                let _ = Term::stdout().clear_screen();
+            }
             // Only lock mutex to grab active devices
             let active = {
                 let devices = DEVICES.lock().await;
@@ -132,7 +136,7 @@ pub async fn run(central: Adapter, args: MonitorArgs) -> anyhow::Result<()> {
                     .values()
                     .filter_map(|v| {
                         if (now - v.last_seen).as_secs() < args.device_timeout {
-                            Some(v)
+                            Some(&v.device)
                         } else {
                             None
                         }
@@ -140,18 +144,12 @@ pub async fn run(central: Adapter, args: MonitorArgs) -> anyhow::Result<()> {
                     .cloned()
                     .collect::<Vec<_>>()
             };
-            for d in active {
-                print!("[+] Device: {}", d.device);
-                for ManufacturerData {
-                    manufacturer_id,
-                    manufacturer_data,
-                } in d.manufacturer_data.values()
-                {
-                    println!(
-                        "    └─ ManufacturerData: {:0X}: {} ",
-                        manufacturer_id,
-                        hex::encode(manufacturer_data)
-                    );
+            if args.json {
+                // XXX fix error handling
+                println!("{}", serde_json::to_string(&active).unwrap_or("{}".to_string()));
+            } else {
+                for d in active {
+                    print!("[+] Device: {}", d);
                 }
             }
             sleep(Duration::from_millis(args.update)).await;
@@ -159,7 +157,9 @@ pub async fn run(central: Adapter, args: MonitorArgs) -> anyhow::Result<()> {
     };
 
     // Clear screen
-    let _ = Term::stdout().clear_screen();
+    if !args.json {
+        let _ = Term::stdout().clear_screen();
+    }
 
     if let Some(t) = args.timeout {
         if timeout(Duration::from_secs(t), async { join!(scan, display) })

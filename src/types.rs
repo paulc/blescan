@@ -8,13 +8,13 @@ use serde_json::Value;
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use crate::characteristic_data::CharFormat;
 use crate::util::{format_properties, serialize_char_props, serialize_hex, serialize_hex_option};
-use crate::{CHARACTERISTIC_MAP, DESCRIPTOR_MAP, SERVICE_MAP};
+use crate::{CHARACTERISTIC_MAP, COMPANY_MAP, DESCRIPTOR_MAP, SERVICE_MAP};
 use crate::{CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, ENUMERATE_TIMEOUT, WRITE_TIMEOUT};
 
 #[derive(Debug, Clone, Serialize)]
@@ -23,6 +23,7 @@ pub struct DeviceInfo {
     pub name: Option<String>,
     pub rssi: Option<i16>,
     pub services: BTreeMap<Uuid, ServiceInfo>,
+    pub manufacturer_data: BTreeSet<ManufacturerData>,
 }
 
 impl DeviceInfo {
@@ -54,6 +55,7 @@ impl DeviceInfo {
             name,
             rssi,
             services,
+            manufacturer_data: BTreeSet::new(), // From ManufacturerDataAdvertisemen
         })
     }
 
@@ -172,6 +174,16 @@ impl DeviceInfo {
         }
         Ok(result)
     }
+
+    /// Update manufacturer_data
+    pub fn update_manufacturer_data(&mut self, id: u16, data: &Vec<u8>) -> bool {
+        let company_name = COMPANY_MAP.get(&id).copied();
+        self.manufacturer_data.insert(ManufacturerData {
+            id,
+            company_name,
+            data: data.clone(),
+        })
+    }
 }
 
 impl std::fmt::Display for DeviceInfo {
@@ -188,6 +200,9 @@ impl std::fmt::Display for DeviceInfo {
         )?;
         for s in &self.services {
             write!(f, "{}", s.1)?;
+        }
+        for md in &self.manufacturer_data {
+            write!(f, "{}", md)?;
         }
         Ok(())
     }
@@ -433,6 +448,32 @@ impl std::fmt::Display for NotificationData {
                 hex::encode(&self.value)
             )?;
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ManufacturerData {
+    id: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub company_name: Option<&'static str>,
+    #[serde(serialize_with = "serialize_hex")]
+    data: Vec<u8>,
+}
+
+impl std::fmt::Display for ManufacturerData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "    └─ ManufacturerData: {:X}{}: {}",
+            self.id,
+            if let Some(name) = self.company_name {
+                format!(" [{}] ", name)
+            } else {
+                "".to_string()
+            },
+            hex::encode(&self.data)
+        )?;
         Ok(())
     }
 }
