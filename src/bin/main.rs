@@ -42,9 +42,18 @@ async fn main() -> anyhow::Result<()> {
         MAX_TASKS.store(t, Ordering::Relaxed)
     }
 
+    // Load command file
+    let command = match args.command {
+        Commands::Run(run_args) => match read_json_command(&run_args.path)? {
+            Commands::Run(_) => anyhow::bail!("Invalid JSON command file: <run> not allowed"),
+            command => command,
+        },
+        command => command,
+    };
+
     // SSE server forks a child process per request so doesnt need Bluetooth
     #[cfg(feature = "sse")]
-    if let Commands::Sse(sse_args) = args.command {
+    if let Commands::Sse(sse_args) = command {
         let mut global_args = vec![];
         for (k, v) in [
             ("--connect-timeout", args.connect_timeout),
@@ -69,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
         .ok_or(anyhow!("No Bluetooth adapters found"))?;
 
     // Run command
-    match args.command {
+    match command {
         Commands::Scan(args) => scan::run(central, args).await?,
         Commands::Enumerate(args) => enumerate::run(central, args).await?,
         Commands::Poll(args) => poll::run(central, args).await?,
@@ -78,26 +87,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::WriteRead(args) => write_read::run(central, args).await?,
         Commands::Dump(args) => dump::run(central, args).await?,
         Commands::Monitor(args) => monitor::run(central, args).await?,
-        // Load command file and run
-        Commands::Run(args) => match read_json_command(&args.path)? {
-            Commands::Scan(args) => scan::run(central, args).await?,
-            Commands::Enumerate(args) => enumerate::run(central, args).await?,
-            Commands::Poll(args) => poll::run(central, args).await?,
-            Commands::Notify(args) => notify::run(central, args).await?,
-            Commands::Write(args) => write::run(central, args).await?,
-            Commands::WriteRead(args) => write_read::run(central, args).await?,
-            Commands::Dump(args) => dump::run(central, args).await?,
-            Commands::Monitor(args) => monitor::run(central, args).await?,
-            #[cfg(feature = "quickjs")]
-            Commands::Js(args) => js::run(central, args).await?,
-            Commands::Run(_) => anyhow::bail!("Invalid JSON command file: <run> not allowed"),
-            #[cfg(feature = "sse")]
-            Commands::Sse(_) => anyhow::bail!("Invalid JSON command file: <sse> not allowed"),
-        },
         #[cfg(feature = "quickjs")]
-        Commands::Js(args) => {
-            js::run(central, args).await?;
-        }
+        Commands::Js(args) => js::run(central, args).await?,
+        Commands::Run(_) => unreachable!(),
         #[cfg(feature = "sse")]
         Commands::Sse(_) => unreachable!(),
     }

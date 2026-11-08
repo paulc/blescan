@@ -32,7 +32,7 @@ tr.data { cursor: pointer; }
 tr.data:hover { background: var(--panel); }
 tr.detail pre { margin: 0; white-space: pre-wrap; }
 td .svc { white-space: nowrap; }
-td .chr { padding-left: 1.5em; word-break: normal; }
+td .chr { padding-left: 1em; word-break: normal; }
 td .muted { color: var(--muted); }
 .act { font-family: system-ui, sans-serif; font-size: 11px; padding: 0 5px; margin-left: 4px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); color: var(--accent); text-decoration: none; white-space: nowrap; cursor: pointer; }
 .act:hover { border-color: var(--accent); }
@@ -86,8 +86,9 @@ try { cmd = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch (e) 
 const name = cmd && Object.keys(cmd)[0];
 // monitor returns full device list for each update
 const LIST = name === 'monitor';
-// scan/monitor rows are devices - show enumerate link
-const DEVICES = name === 'scan' || name === 'monitor';
+// scan/monitor/dump rows are devices - show enumerate link
+const DEVICES = name === 'scan' || name === 'monitor' || name === 'dump';
+const TREE = '\u2514\u2500 ';
 // Timeout for commands started from action links (s)
 const ACTION_TIMEOUT = 30;
 
@@ -210,7 +211,7 @@ function renderServices(services, row) {
     div.append(sd);
     for (const c of Object.values(s.characteristics || {})) {
       const cd = el('div', 'chr');
-      cd.append(el('b', null, shortUuid(c.uuid)), ' ', typeName(c.characteristic_type), ' ',
+      cd.append(el('span', 'muted', TREE), el('b', null, shortUuid(c.uuid)), ' ', typeName(c.characteristic_type), ' ',
         el('span', 'muted', c.properties || ''));
       if (c.value !== undefined && c.value !== null) cd.append(' = ' + c.value);
       if (c.decoded !== undefined && c.decoded !== null) cd.append(' ', el('b', null, JSON.stringify(c.decoded)));
@@ -232,17 +233,45 @@ function renderManufacturer(md) {
   return div;
 }
 
+// Dump advertisement data (manufacturer_id/service_id are raw - company name from device data)
+function renderAdvertisement(adv, row) {
+  const div = el('div');
+  for (const m of adv.manufacturer_data || []) {
+    const known = (row.flat.manufacturer_data || []).find(d => d.id === m.manufacturer_id);
+    renderManufacturer([{id: m.manufacturer_id, company_name: known && known.company_name, data: m.manufacturer_data}])
+      .childNodes.forEach(n => div.append(n.cloneNode(true)));
+  }
+  for (const sd of adv.service_data || []) {
+    const d = el('div');
+    d.append(el('b', null, shortUuid(sd.service_id)), ' ' + sd.service_data);
+    div.append(d);
+  }
+  return div;
+}
+
 // Returns list of nodes/strings for cell
 function renderCell(c, r) {
   const v = r.flat[c];
   if (c === 'services' && v && typeof v === 'object' && !Array.isArray(v)) return [renderServices(v, r)];
   if (c === 'manufacturer_data' && Array.isArray(v)) return [renderManufacturer(v)];
+  if (c === 'advertisement' && v) return [renderAdvertisement(v, r)];
   if (c === 'id' && DEVICES && v) return [String(v), enumerateLink(v)].filter(x => x);
   return [cell(v)];
 }
 
+// Dump events ({"DeviceEvent": {event_type, device, ..}}) -> device row + event fields
+function flattenDump(v) {
+  const e = Object.values(v)[0] || {};
+  const row = {event_type: e.event_type};
+  Object.assign(row, e.device || {});
+  if (e.state) row.state = e.state;
+  if (e.manufacturer_data) row.advertisement = {manufacturer_data: e.manufacturer_data};
+  if (e.service_data) row.advertisement = {service_data: e.service_data};
+  return row;
+}
+
 function makeRow(raw) {
-  const flat = flatten(raw);
+  const flat = name === 'dump' && raw && typeof raw === 'object' && !Array.isArray(raw) ? flattenDump(raw) : flatten(raw);
   const r = {ts: new Date().toLocaleTimeString(), flat, raw};
   r.text = JSON.stringify(raw).toLowerCase();
   for (const k of Object.keys(flat)) {

@@ -137,6 +137,9 @@ Options:
 - `--cors` - send permissive CORS headers
 - `--debug` - log requests to stderr
 
+The server config can also be loaded from a JSON file using `run` (use
+`blescan --dump-json sse [..args]` to generate).
+
 The built-in debug pages (always available at `/debug/index.html`) allow a
 command to be built interactively and the output viewed as a table (`monitor`
 is shown as an updating device list).

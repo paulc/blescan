@@ -526,15 +526,18 @@ pub struct JsArgs {
 #[argh(subcommand, name = "sse")]
 pub struct SseArgs {
     /// bind address (default: 127.0.0.1:3000)
-    #[argh(option, default = "\"127.0.0.1:3000\".into()")]
+    #[argh(option, default = "default_bind()")]
+    #[serde(default = "default_bind")]
     pub bind: String,
 
     /// sse endpoint (default: /sse)
-    #[argh(option, default = "\"/sse\".into()")]
+    #[argh(option, default = "default_endpoint()")]
+    #[serde(default = "default_endpoint")]
     pub endpoint: String,
 
     /// index.html file (default: built-in debug page)
     #[argh(option)]
+    #[serde(default)]
     pub index: Option<String>,
 
     /// additional html page <path:file> [multiple allowed]
@@ -557,4 +560,12 @@ pub struct SseArgs {
     #[argh(switch)]
     #[serde(default)]
     pub debug: bool,
+}
+
+fn default_bind() -> String {
+    "127.0.0.1:3000".into()
+}
+
+fn default_endpoint() -> String {
+    "/sse".into()
 }
