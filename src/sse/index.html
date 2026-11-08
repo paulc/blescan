@@ -12,12 +12,16 @@
 body { font-family: system-ui, sans-serif; color: var(--fg); background: var(--bg); max-width: 900px; margin: 20px auto; padding: 0 16px; }
 h1 { font-size: 1.4em; }
 label { display: block; margin: 10px 0 4px; font-weight: 600; }
+#fields label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hint { font-weight: normal; color: var(--muted); font-size: 0.85em; }
 input[type=text], input[type=number], textarea, select { width: 100%; box-sizing: border-box; padding: 6px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
 textarea { font-family: monospace; font-size: 13px; }
 .check { display: flex; align-items: center; gap: 6px; font-weight: 600; margin: 10px 0; }
 #fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 16px; }
-pre { background: var(--panel); border: 1px solid var(--border); padding: 8px; overflow-x: auto; font-size: 13px; }
+pre { background: var(--panel); border: 1px solid var(--border); padding: 8px; margin-top: 4px; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
+.curl { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.curl label { margin: 0; }
+.curl button { padding: 2px 10px; font-size: 0.85em; }
 button { padding: 8px 16px; font: inherit; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--fg); }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .row { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
@@ -34,7 +38,7 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 <button class="primary" id="run">Run</button>
 <button id="reset">Reset</button>
 </div>
-<label>curl</label>
+<div class="curl"><label>curl</label><button id="copy">Copy</button></div>
 <pre id="curl"></pre>
 <script>
 const ENDPOINT = {{ENDPOINT}};
@@ -96,10 +100,12 @@ function buildForm(cmd, params) {
     } else {
       const label = document.createElement('label');
       label.innerHTML = k + ' <span class="hint"></span>';
-      label.querySelector('.hint').textContent = hint + (type === 'list' ? ' - one per line' : '');
+      label.querySelector('.hint').textContent = hint;
+      label.title = k + ' - ' + hint;
       if (type === 'list') {
         input = document.createElement('textarea');
         input.rows = 2;
+        input.placeholder = 'one per line';
         input.value = (v || []).join('\n');
       } else {
         input = document.createElement('input');
@@ -147,6 +153,22 @@ for (const c of COMMANDS) {
 }
 $('cmd').onchange = () => buildForm($('cmd').value);
 $('json').oninput = updateCurl;
+$('copy').onclick = async () => {
+  const text = $('curl').textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    // navigator.clipboard needs a secure context - fall back to selection copy
+    const range = document.createRange();
+    range.selectNodeContents($('curl'));
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    document.execCommand('copy');
+    getSelection().removeAllRanges();
+  }
+  $('copy').textContent = 'Copied';
+  setTimeout(() => { $('copy').textContent = 'Copy'; }, 1500);
+};
 $('reset').onclick = () => { history.replaceState(null, '', location.pathname); buildForm($('cmd').value); };
 $('run').onclick = () => {
   let cmd;

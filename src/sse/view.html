@@ -31,12 +31,22 @@ td { font-family: monospace; font-size: 12px; max-width: 40em; word-break: break
 tr.data { cursor: pointer; }
 tr.data:hover { background: var(--panel); }
 tr.detail pre { margin: 0; white-space: pre-wrap; }
+td .svc { white-space: nowrap; }
+td .chr { padding-left: 1.5em; word-break: normal; }
+td .muted { color: var(--muted); }
+.act { font-family: system-ui, sans-serif; font-size: 11px; padding: 0 5px; margin-left: 4px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); color: var(--accent); text-decoration: none; white-space: nowrap; cursor: pointer; }
+.act:hover { border-color: var(--accent); }
+dialog { color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; min-width: min(28em, 90vw); }
+dialog label { display: block; margin: 8px 0; }
+dialog input[type=text] { width: 100%; box-sizing: border-box; }
+dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 #log { max-height: 8em; overflow: auto; font-family: monospace; font-size: 12px; color: var(--err); white-space: pre-wrap; margin-top: 6px; }
 </style>
 </head>
 <body>
 <header>
 <h1 id="title">blescan</h1>
+<a id="up" hidden>&lt; Back</a>
 <a id="back" href="/debug/index.html">&lt; Back to index</a>
 <span id="status">-</span>
 <span id="count"></span>
@@ -52,8 +62,23 @@ tr.detail pre { margin: 0; white-space: pre-wrap; }
 </div>
 <div id="wrap"><table><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table></div>
 <div id="log"></div>
+<dialog id="wdlg">
+<form method="dialog">
+<b>Write</b> <code id="wchr"></code>
+<label>Format <input type="text" id="wfmt" list="wfmts" placeholder="blank = hex bytes / utf8 / u8,u16 ..."></label>
+<label>Data <input type="text" id="wdata" required placeholder="hex bytes / value(s) - comma separated"></label>
+<label><input type="checkbox" id="wnoresp"> Without response</label>
+<label><input type="checkbox" id="wtab"> Open in new tab</label>
+<div class="buttons"><button value="cancel" formnovalidate>Cancel</button><button value="ok">Write</button></div>
+</form>
+</dialog>
+<datalist id="wfmts">
+<option value="utf8"><option value="bytes"><option value="bool"><option value="u8"><option value="u16"><option value="u32"><option value="u64">
+<option value="i8"><option value="i16"><option value="i32"><option value="i64"><option value="f32"><option value="f64">
+</datalist>
 <script>
 const ENDPOINT = {{ENDPOINT}};
+const COMMANDS = {{COMMANDS}};
 const $ = (id) => document.getElementById(id);
 
 let cmd = null;
@@ -61,6 +86,10 @@ try { cmd = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch (e) 
 const name = cmd && Object.keys(cmd)[0];
 // monitor returns full device list for each update
 const LIST = name === 'monitor';
+// scan/monitor rows are devices - show enumerate link
+const DEVICES = name === 'scan' || name === 'monitor';
+// Timeout for commands started from action links (s)
+const ACTION_TIMEOUT = 30;
 
 let rows = [];      // [{ts, flat, raw, text}]
 let cols = [];
@@ -68,6 +97,8 @@ let paused = false;
 let ctrl = null;
 let sortCol = null, sortDir = 1;
 const expanded = new Set();
+// Hold monitor re-render while mouse pressed (so clicks reach their target)
+let holding = false;
 
 // Flatten single-key wrapper objects ({"notification": {...}}) into type + fields
 function flatten(v) {
@@ -83,6 +114,131 @@ function cell(v) {
   if (v === null || v === undefined) return '';
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function shortUuid(u) {
+  const m = /^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/i.exec(u);
+  return m ? '0x' + m[1] : u;
+}
+
+function typeName(t) {
+  return t ? t.replace(/^org\.bluetooth\.(service|characteristic|descriptor)\./, '') : '';
+}
+
+const SELF = location.pathname + location.search + location.hash;
+
+// View page url for command (?back= links to current page)
+function viewUrl(c) {
+  return '/debug/view.html?back=' + encodeURIComponent(SELF) + '#' + encodeURIComponent(JSON.stringify(c));
+}
+
+// Record same-tab navigation so back link can use history.back()
+function markNav(url) {
+  try { sessionStorage.setItem('nav:' + url, '1'); } catch (e) {}
+}
+
+// Link to run command in view page (null if command not allowed)
+function actionLink(label, c) {
+  if (!COMMANDS.includes(Object.keys(c)[0])) return null;
+  const a = el('a', 'act', label);
+  a.href = viewUrl(c);
+  a.onclick = (e) => {
+    e.stopPropagation();
+    if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) markNav(a.getAttribute('href'));
+  };
+  return a;
+}
+
+function enumerateLink(id) {
+  return actionLink('enumerate', {enumerate: {read: true, device: [id], timeout: ACTION_TIMEOUT, max: 1}});
+}
+
+function charActions(row, c) {
+  const props = (c.properties || '').replace(/[\[\]]/g, '').split(',');
+  const has = (p) => props.includes(p);
+  const base = {device: [row.flat.id], service: [c.service_uuid], characteristic: [c.uuid]};
+  const e = (cmd && cmd.enumerate) || {};
+  const decode = {decode: e.decode || [], decode_file: e.decode_file || []};
+  const acts = [];
+  if (has('Read')) {
+    acts.push(actionLink('read', {enumerate: Object.assign({read: true, timeout: ACTION_TIMEOUT, max: 1}, base, decode)}));
+  }
+  if ((has('Write') || has('WriteNoResp')) && COMMANDS.includes('write')) {
+    const b = el('button', 'act', 'write');
+    b.onclick = (ev) => { ev.stopPropagation(); openWrite(row, c, !has('Write'), ev.metaKey || ev.ctrlKey); };
+    acts.push(b);
+  }
+  if (has('Notify') || has('Indicate')) acts.push(actionLink('notify', {notify: Object.assign({}, base, decode)}));
+  return acts.filter(a => a);
+}
+
+let writeTarget = null;
+function openWrite(row, c, noresp, newTab) {
+  writeTarget = {device: row.flat.id, service: c.service_uuid, uuid: c.uuid};
+  $('wchr').textContent = shortUuid(c.uuid) + ' ' + typeName(c.characteristic_type);
+  $('wnoresp').checked = noresp;
+  $('wtab').checked = newTab;
+  $('wdlg').showModal();
+  $('wdata').focus();
+}
+
+$('wdlg').addEventListener('close', () => {
+  if ($('wdlg').returnValue !== 'ok' || !writeTarget) return;
+  const fmt = $('wfmt').value.trim();
+  const t = writeTarget;
+  const url = viewUrl({write: {
+    device: [t.device], service: [t.service],
+    characteristic: [t.uuid + (fmt ? '::' + fmt : '') + '=' + $('wdata').value],
+    without_response: $('wnoresp').checked, timeout: ACTION_TIMEOUT,
+  }});
+  if ($('wtab').checked) window.open(url, '_blank');
+  else { markNav(url); location.href = url; }
+});
+
+function renderServices(services, row) {
+  const div = el('div');
+  for (const s of Object.values(services)) {
+    const sd = el('div', 'svc');
+    sd.append(el('b', null, shortUuid(s.uuid)), ' ', el('span', 'muted', typeName(s.service_type)));
+    div.append(sd);
+    for (const c of Object.values(s.characteristics || {})) {
+      const cd = el('div', 'chr');
+      cd.append(el('b', null, shortUuid(c.uuid)), ' ', typeName(c.characteristic_type), ' ',
+        el('span', 'muted', c.properties || ''));
+      if (c.value !== undefined && c.value !== null) cd.append(' = ' + c.value);
+      if (c.decoded !== undefined && c.decoded !== null) cd.append(' ', el('b', null, JSON.stringify(c.decoded)));
+      if (name === 'enumerate') cd.append(...charActions(row, c));
+      div.append(cd);
+    }
+  }
+  return div;
+}
+
+function renderManufacturer(md) {
+  const div = el('div');
+  for (const m of md) {
+    const d = el('div');
+    const id = '0x' + Number(m.id).toString(16).padStart(4, '0');
+    d.append(el('span', 'muted', (m.company_name || 'Unknown') + ' (' + id + ')'), ' ' + m.data);
+    div.append(d);
+  }
+  return div;
+}
+
+// Returns list of nodes/strings for cell
+function renderCell(c, r) {
+  const v = r.flat[c];
+  if (c === 'services' && v && typeof v === 'object' && !Array.isArray(v)) return [renderServices(v, r)];
+  if (c === 'manufacturer_data' && Array.isArray(v)) return [renderManufacturer(v)];
+  if (c === 'id' && DEVICES && v) return [String(v), enumerateLink(v)].filter(x => x);
+  return [cell(v)];
 }
 
 function makeRow(raw) {
@@ -118,11 +274,11 @@ function renderHead() {
 function rowEl(r) {
   const tr = document.createElement('tr');
   tr.className = 'data';
-  const vals = LIST ? [] : [r.ts];
-  for (const c of cols) vals.push(cell(r.flat[c]));
+  const vals = LIST ? [] : [[r.ts]];
+  for (const c of cols) vals.push(renderCell(c, r));
   for (const v of vals) {
     const td = document.createElement('td');
-    td.textContent = v;
+    td.append(...v);
     tr.append(td);
   }
   // Click to toggle pretty JSON (monitor keeps expanded devices open across updates)
@@ -191,7 +347,7 @@ function onMessage(data) {
   try { v = JSON.parse(data); } catch (e) { log('invalid json: ' + data); return; }
   if (LIST) {
     rows = (Array.isArray(v) ? v : [v]).map(makeRow);
-    if (!paused) renderAll();
+    if (!paused && !holding) renderAll();
   } else {
     const r = makeRow(v);
     rows.push(r);
@@ -283,6 +439,17 @@ if (!name) {
   $('title').textContent = 'blescan ' + name;
   $('req').textContent = JSON.stringify(cmd);
   $('back').href = '/debug/index.html' + location.hash;
+  const back = new URLSearchParams(location.search).get('back');
+  if (back) {
+    let sameTab = false;
+    try { sameTab = sessionStorage.getItem('nav:' + SELF) === '1'; } catch (e) {}
+    $('up').href = back;
+    $('up').hidden = false;
+    // Opened from back page in this tab - use history so browser back/forward stay consistent
+    $('up').onclick = (e) => {
+      if (sameTab && history.length > 1) { e.preventDefault(); history.back(); }
+    };
+  }
   if (LIST) { $('scroll').parentElement.hidden = true; $('max').parentElement.hidden = true; }
   renderHead();
   start();
@@ -299,6 +466,10 @@ $('pause').onclick = () => {
 };
 $('clear').onclick = () => { rows = []; renderAll(); };
 $('filter').oninput = renderAll;
+$('wrap').addEventListener('mousedown', () => { holding = true; });
+document.addEventListener('mouseup', () => setTimeout(() => { holding = false; }, 0));
+// Action links only change the hash - reload to run new command
+window.addEventListener('hashchange', () => location.reload());
 $('max').onchange = () => { trim(); updateCount(); };
 </script>
 </body>
