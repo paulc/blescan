@@ -2,7 +2,7 @@
 
 A simple command-line BLE scanner and debugging tool (using the `btleplug` Rust
 crate).  Supports human readable text, JSON outputs (for further
-filtering/processing), and a JavsScript scripting mode for custom
+filtering/processing), SSE server, and a JavsScript scripting mode for custom
 processing.
 
 ## Commands
@@ -243,6 +243,8 @@ Commands:
   js                Run JS script with BLE `scan(opts)` function installed in
                     globals   `scan({{rssi?, name?|names?, device?|devices?,
                     filter_seen? }})`
+  sse               Run SSE server (POST JSON command to endpoint - returns
+                    NDJSON output as text/event-stream)
 
 ```
 
@@ -493,6 +495,38 @@ JSON Params:
         path
 
     Run blescan --help for more information.
+```
+
+```
+Usage: blescan sse [--bind <bind>] [--endpoint <endpoint>] [--index <index>] [--html <html...>] [--allow <allow...>] [--cors] [--debug]
+
+Run SSE server (POST JSON command to endpoint - returns NDJSON output as text/event-stream)
+
+Options:
+  --bind            bind address (default: 127.0.0.1:3000)
+  --endpoint        sse endpoint (default: /sse)
+  --index           index.html file (default: built-in debug page)
+  --html            additional html page <path:file> [multiple allowed]
+  --allow           allowed commands (comma separated) [multiple allowed]
+                    (default:
+                    scan,monitor,enumerate,poll,notify,write,write_read,dump)
+  --cors            send permissive CORS headers
+  --debug           log requests to stderr
+  --help, help      display usage information
+
+
+JSON Params:
+    {
+      "sse": {
+        "bind": "127.0.0.1:3000",
+        "endpoint": "/sse",
+        "index": null,
+        "html": [],
+        "allow": [],
+        "cors": false,
+        "debug": false
+      }
+    }
 ```
 
 ```

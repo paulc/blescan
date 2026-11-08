@@ -6,7 +6,7 @@ printf '```\n'
 target/release/blescan --help
 printf '```\n\n'
 
-for cmd in scan monitor enumerate poll write notify dump run js; do
+for cmd in scan monitor enumerate poll write notify dump run sse js; do
     printf '```\n'
     target/release/blescan $cmd --help
     printf '\nJSON Params:\n'
