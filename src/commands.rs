@@ -48,6 +48,8 @@ pub enum Commands {
     Run(RunArgs),
     #[cfg(feature = "quickjs")]
     Js(JsArgs),
+    #[cfg(feature = "sse")]
+    Sse(SseArgs),
 }
 
 #[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
@@ -111,19 +113,27 @@ pub struct MonitorArgs {
     pub timeout: Option<u64>,
 
     /// device timeout
-    #[argh(option, default = "5")]
-    #[serde(default)]
+    #[argh(option, default = "default_device_timeout()")]
+    #[serde(default = "default_device_timeout")]
     pub device_timeout: u64,
 
     /// update (ms)
-    #[argh(option, default = "500")]
-    #[serde(default)]
+    #[argh(option, default = "default_update()")]
+    #[serde(default = "default_update")]
     pub update: u64,
 
     /// NDJSON output
     #[argh(switch)]
     #[serde(default)]
     pub json: bool,
+}
+
+fn default_device_timeout() -> u64 {
+    5
+}
+
+fn default_update() -> u64 {
+    500
 }
 
 #[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
@@ -508,4 +518,43 @@ pub struct JsArgs {
     #[argh(switch)]
     /// use callback mqtt_rx api (mqtt_rx_cb)
     pub cb: bool,
+}
+
+#[derive(FromArgs, Debug, Clone, Serialize, Deserialize)]
+/// Run SSE server (POST JSON command to endpoint - returns NDJSON output as
+/// text/event-stream)
+#[argh(subcommand, name = "sse")]
+pub struct SseArgs {
+    /// bind address (default: 127.0.0.1:3000)
+    #[argh(option, default = "\"127.0.0.1:3000\".into()")]
+    pub bind: String,
+
+    /// sse endpoint (default: /sse)
+    #[argh(option, default = "\"/sse\".into()")]
+    pub endpoint: String,
+
+    /// index.html file (default: built-in debug page)
+    #[argh(option)]
+    pub index: Option<String>,
+
+    /// additional html page <path:file> [multiple allowed]
+    #[argh(option)]
+    #[serde(default)]
+    pub html: Vec<String>,
+
+    /// allowed commands (comma separated) [multiple allowed]
+    /// (default: scan,monitor,enumerate,poll,notify,write,write_read,dump)
+    #[argh(option)]
+    #[serde(default)]
+    pub allow: Vec<String>,
+
+    /// send permissive CORS headers
+    #[argh(switch)]
+    #[serde(default)]
+    pub cors: bool,
+
+    /// log requests to stderr
+    #[argh(switch)]
+    #[serde(default)]
+    pub debug: bool,
 }

@@ -18,6 +18,7 @@ processing.
 | `write-read` | Write and then read data to characteristics (for protocols using a write-then-read pattern) |
 | `dump` | Raw advertisement event stream with optional event filtering |
 | `run` | Run command from JSON file |
+| `sse` | HTTP server - run JSON command and stream output as SSE |
 | `js` | Run JavaScript script |
 
 ## Filtering
@@ -108,6 +109,41 @@ It is possible to dump to equivalent JSON for a CLI command using
 `blescan --dump-json <command> [..args]`.
 
 You can pass the json file from stdin using `blescan run -- -`.
+
+## SSE Server
+
+`blescan sse` runs an HTTP server which accepts a JSON command (same format as
+`run`) as a POST to the SSE endpoint (default `/sse`) and streams the command
+output back as `text/event-stream`. Each request runs in a separate `blescan`
+process (killed when the client disconnects).
+
+```
+curl -N -d '{"scan":{"timeout":10}}' http://127.0.0.1:3000/sse
+```
+
+Output is always JSON (the `json` parameter is ignored). Events:
+
+- `message` - command output (one JSON object per event)
+- `stderr` - stderr line (JSON string)
+- `exit` - process exit `{"code":<n>}`
+
+Options:
+
+- `--bind <addr>` - bind address (default `127.0.0.1:3000`)
+- `--endpoint <path>` - SSE endpoint (default `/sse`)
+- `--allow <cmd,..>` - limit available commands (default: all except `js`/`run`)
+- `--index <file>` - serve file as `/` (default: built-in debug page)
+- `--html <path:file>` - serve additional html page (multiple allowed)
+- `--cors` - send permissive CORS headers
+- `--debug` - log requests to stderr
+
+The built-in debug pages (always available at `/debug/index.html`) allow a
+command to be built interactively and the output viewed as a table (`monitor`
+is shown as an updating device list).
+
+Note that the server has no authentication and allows commands to read server
+side `--decode-file` files - bind to localhost (default) or use `--allow` to
+limit commands if exposed.
 
 ## JavsScript Mode
 

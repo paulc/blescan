@@ -42,6 +42,24 @@ async fn main() -> anyhow::Result<()> {
         MAX_TASKS.store(t, Ordering::Relaxed)
     }
 
+    // SSE server forks a child process per request so doesnt need Bluetooth
+    #[cfg(feature = "sse")]
+    if let Commands::Sse(sse_args) = args.command {
+        let mut global_args = vec![];
+        for (k, v) in [
+            ("--connect-timeout", args.connect_timeout),
+            ("--enumerate-timeout", args.enumerate_timeout),
+            ("--write-timeout", args.write_timeout),
+            ("--disconnect-timeout", args.disconnect_timeout),
+            ("--max-tasks", args.max_tasks.map(|v| v as u64)),
+        ] {
+            if let Some(v) = v {
+                global_args.extend([k.to_string(), v.to_string()]);
+            }
+        }
+        return blescan::sse::run(sse_args, global_args).await;
+    }
+
     // Initialise Bluetooth
     let manager = Manager::new().await?;
     let adapters = manager.adapters().await?;
@@ -73,11 +91,15 @@ async fn main() -> anyhow::Result<()> {
             #[cfg(feature = "quickjs")]
             Commands::Js(args) => js::run(central, args).await?,
             Commands::Run(_) => anyhow::bail!("Invalid JSON command file: <run> not allowed"),
+            #[cfg(feature = "sse")]
+            Commands::Sse(_) => anyhow::bail!("Invalid JSON command file: <sse> not allowed"),
         },
         #[cfg(feature = "quickjs")]
         Commands::Js(args) => {
             js::run(central, args).await?;
         }
+        #[cfg(feature = "sse")]
+        Commands::Sse(_) => unreachable!(),
     }
 
     Ok(())

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>blescan sse</title>
+<style>
+:root { --fg: #222; --bg: #fff; --muted: #666; --border: #ccc; --panel: #f6f6f6; --accent: #1565c0; --ok: #2e7d32; --err: #c62828; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg: #ddd; --bg: #1b1b1b; --muted: #999; --border: #444; --panel: #252525; --accent: #64b5f6; --ok: #81c784; --err: #e57373; }
+}
+body { font-family: system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0; padding: 12px 16px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+h1 { font-size: 1.3em; margin: 0; }
+a { color: var(--accent); }
+code { font-size: 12px; }
+#req { color: var(--muted); font-family: monospace; font-size: 12px; margin: 6px 0; word-break: break-all; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+.controls input[type=text] { flex: 1; min-width: 160px; }
+input, button { font: inherit; padding: 4px 8px; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
+input[type=number] { width: 6em; }
+button { cursor: pointer; background: var(--panel); }
+.ok { color: var(--ok); font-weight: 600; }
+.err { color: var(--err); font-weight: 600; }
+#wrap { flex: 1; overflow: auto; border: 1px solid var(--border); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { position: sticky; top: 0; background: var(--panel); text-align: left; cursor: default; white-space: nowrap; }
+th.sort { cursor: pointer; }
+th, td { border-bottom: 1px solid var(--border); padding: 3px 6px; vertical-align: top; }
+td { font-family: monospace; font-size: 12px; max-width: 40em; word-break: break-all; }
+tr.data { cursor: pointer; }
+tr.data:hover { background: var(--panel); }
+tr.detail pre { margin: 0; white-space: pre-wrap; }
+#log { max-height: 8em; overflow: auto; font-family: monospace; font-size: 12px; color: var(--err); white-space: pre-wrap; margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+<h1 id="title">blescan</h1>
+<a id="back" href="/debug/index.html">&lt; Back to index</a>
+<span id="status">-</span>
+<span id="count"></span>
+</header>
+<div id="req"></div>
+<div class="controls">
+<button id="stop">Stop</button>
+<button id="pause">Pause</button>
+<button id="clear">Clear</button>
+<input type="text" id="filter" placeholder="Filter (substring / case insensitive)">
+<label>Max rows <input type="number" id="max" value="1000" min="1"></label>
+<label><input type="checkbox" id="scroll" checked> Autoscroll</label>
+</div>
+<div id="wrap"><table><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table></div>
+<div id="log"></div>
+<script>
+const ENDPOINT = {{ENDPOINT}};
+const $ = (id) => document.getElementById(id);
+
+let cmd = null;
+try { cmd = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch (e) {}
+const name = cmd && Object.keys(cmd)[0];
+// monitor returns full device list for each update
+const LIST = name === 'monitor';
+
+let rows = [];      // [{ts, flat, raw, text}]
+let cols = [];
+let paused = false;
+let ctrl = null;
+let sortCol = null, sortDir = 1;
+const expanded = new Set();
+
+// Flatten single-key wrapper objects ({"notification": {...}}) into type + fields
+function flatten(v) {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return {value: v};
+  const keys = Object.keys(v);
+  if (keys.length === 1 && v[keys[0]] && typeof v[keys[0]] === 'object' && !Array.isArray(v[keys[0]])) {
+    return Object.assign({type: keys[0]}, v[keys[0]]);
+  }
+  return v;
+}
+
+function cell(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+
+function makeRow(raw) {
+  const flat = flatten(raw);
+  const r = {ts: new Date().toLocaleTimeString(), flat, raw};
+  r.text = JSON.stringify(raw).toLowerCase();
+  for (const k of Object.keys(flat)) {
+    if (!cols.includes(k)) { cols.push(k); renderHead(); }
+  }
+  return r;
+}
+
+function match(r) {
+  const f = $('filter').value.toLowerCase();
+  return !f || r.text.includes(f);
+}
+
+function renderHead() {
+  const head = $('head');
+  head.innerHTML = '';
+  const all = LIST ? cols : ['time'].concat(cols);
+  for (const c of all) {
+    const th = document.createElement('th');
+    th.textContent = c + (c === sortCol ? (sortDir > 0 ? ' ^' : ' v') : '');
+    if (LIST) {
+      th.className = 'sort';
+      th.onclick = () => { sortDir = sortCol === c ? -sortDir : 1; sortCol = c; renderHead(); renderAll(); };
+    }
+    head.append(th);
+  }
+}
+
+function rowEl(r) {
+  const tr = document.createElement('tr');
+  tr.className = 'data';
+  const vals = LIST ? [] : [r.ts];
+  for (const c of cols) vals.push(cell(r.flat[c]));
+  for (const v of vals) {
+    const td = document.createElement('td');
+    td.textContent = v;
+    tr.append(td);
+  }
+  // Click to toggle pretty JSON (monitor keeps expanded devices open across updates)
+  const toggle = () => {
+    const next = tr.nextSibling;
+    if (next && next.classList.contains('detail')) { next.remove(); expanded.delete(r.flat.id); return; }
+    if (LIST) expanded.add(r.flat.id);
+    const d = document.createElement('tr');
+    d.className = 'detail';
+    const td = document.createElement('td');
+    td.colSpan = vals.length;
+    const pre = document.createElement('pre');
+    pre.textContent = JSON.stringify(r.raw, null, 2);
+    td.append(pre);
+    d.append(td);
+    tr.after(d);
+  };
+  tr.onclick = toggle;
+  if (LIST && expanded.has(r.flat.id)) requestAnimationFrame(toggle);
+  return tr;
+}
+
+function sorted(list) {
+  if (!sortCol) return list;
+  return list.slice().sort((a, b) => {
+    const x = a.flat[sortCol], y = b.flat[sortCol];
+    if (x === y) return 0;
+    if (x === undefined || x === null) return 1;
+    if (y === undefined || y === null) return -1;
+    return (x < y ? -1 : 1) * sortDir;
+  });
+}
+
+function renderAll() {
+  const body = $('body');
+  body.innerHTML = '';
+  const shown = sorted(rows.filter(match));
+  for (const r of rows) r.el = null;
+  for (const r of shown) { r.el = rowEl(r); body.append(r.el); }
+  updateCount(shown.length);
+  autoscroll();
+}
+
+function updateCount(n) {
+  if (n === undefined) n = $('body').querySelectorAll('tr.data').length;
+  $('count').textContent = n + ' / ' + rows.length + (LIST ? ' devices' : ' rows');
+}
+
+function autoscroll() {
+  if (!LIST && $('scroll').checked) $('wrap').scrollTop = $('wrap').scrollHeight;
+}
+
+function trim() {
+  const max = Math.max(1, Number($('max').value) || 1000);
+  while (rows.length > max) {
+    const r = rows.shift();
+    if (r.el) {
+      if (r.el.nextSibling && r.el.nextSibling.classList.contains('detail')) r.el.nextSibling.remove();
+      r.el.remove();
+    }
+  }
+}
+
+function onMessage(data) {
+  let v;
+  try { v = JSON.parse(data); } catch (e) { log('invalid json: ' + data); return; }
+  if (LIST) {
+    rows = (Array.isArray(v) ? v : [v]).map(makeRow);
+    if (!paused) renderAll();
+  } else {
+    const r = makeRow(v);
+    rows.push(r);
+    trim();
+    if (!paused && match(r)) {
+      r.el = rowEl(r);
+      $('body').append(r.el);
+      autoscroll();
+    }
+    updateCount();
+  }
+}
+
+function log(s) {
+  const l = $('log');
+  l.textContent += s + '\n';
+  l.scrollTop = l.scrollHeight;
+}
+
+function setStatus(s, cls) {
+  $('status').textContent = s;
+  $('status').className = cls || '';
+}
+
+function onEvent(type, data) {
+  if (type === 'message') onMessage(data);
+  else if (type === 'stderr') { try { log(JSON.parse(data)); } catch (e) { log(data); } }
+  else if (type === 'exit') {
+    let code = null;
+    try { code = JSON.parse(data).code; } catch (e) {}
+    setStatus('exited (' + code + ')', code === 0 ? 'ok' : 'err');
+  }
+}
+
+// Minimal SSE parser over fetch (EventSource doesnt support POST)
+async function start() {
+  ctrl = new AbortController();
+  $('stop').textContent = 'Stop';
+  setStatus('connecting');
+  try {
+    const resp = await fetch(ENDPOINT, {
+      method: 'POST', body: JSON.stringify(cmd), signal: ctrl.signal,
+      headers: {'Content-Type': 'application/json'},
+    });
+    if (!resp.ok) {
+      setStatus('error ' + resp.status, 'err');
+      log(await resp.text());
+      return;
+    }
+    setStatus('running', 'ok');
+    const reader = resp.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = '';
+    for (;;) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      buf += value.replace(/\r\n?/g, '\n');
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        let type = 'message', data = [];
+        for (const line of block.split('\n')) {
+          if (line.startsWith(':')) continue;
+          const j = line.indexOf(':');
+          const k = j < 0 ? line : line.slice(0, j);
+          let v = j < 0 ? '' : line.slice(j + 1);
+          if (v.startsWith(' ')) v = v.slice(1);
+          if (k === 'event') type = v;
+          else if (k === 'data') data.push(v);
+        }
+        if (data.length) onEvent(type, data.join('\n'));
+      }
+    }
+    if ($('status').textContent === 'running') setStatus('closed');
+  } catch (e) {
+    if (e.name === 'AbortError') setStatus('stopped');
+    else { setStatus('error', 'err'); log(String(e)); }
+  } finally {
+    ctrl = null;
+    $('stop').textContent = 'Restart';
+  }
+}
+
+if (!name) {
+  setStatus('no command', 'err');
+  $('stop').disabled = true;
+} else {
+  document.title = 'blescan ' + name;
+  $('title').textContent = 'blescan ' + name;
+  $('req').textContent = JSON.stringify(cmd);
+  $('back').href = '/debug/index.html' + location.hash;
+  if (LIST) { $('scroll').parentElement.hidden = true; $('max').parentElement.hidden = true; }
+  renderHead();
+  start();
+}
+
+$('stop').onclick = () => {
+  if (ctrl) ctrl.abort();
+  else { $('log').textContent = ''; start(); }
+};
+$('pause').onclick = () => {
+  paused = !paused;
+  $('pause').textContent = paused ? 'Resume' : 'Pause';
+  if (!paused) renderAll();
+};
+$('clear').onclick = () => { rows = []; renderAll(); };
+$('filter').oninput = renderAll;
+$('max').onchange = () => { trim(); updateCount(); };
+</script>
+</body>
+</html>

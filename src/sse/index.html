@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>blescan sse</title>
+<style>
+:root { --fg: #222; --bg: #fff; --muted: #666; --border: #ccc; --panel: #f6f6f6; --accent: #1565c0; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg: #ddd; --bg: #1b1b1b; --muted: #999; --border: #444; --panel: #252525; --accent: #64b5f6; }
+}
+body { font-family: system-ui, sans-serif; color: var(--fg); background: var(--bg); max-width: 900px; margin: 20px auto; padding: 0 16px; }
+h1 { font-size: 1.4em; }
+label { display: block; margin: 10px 0 4px; font-weight: 600; }
+.hint { font-weight: normal; color: var(--muted); font-size: 0.85em; }
+input[type=text], input[type=number], textarea, select { width: 100%; box-sizing: border-box; padding: 6px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
+textarea { font-family: monospace; font-size: 13px; }
+.check { display: flex; align-items: center; gap: 6px; font-weight: 600; margin: 10px 0; }
+#fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 16px; }
+pre { background: var(--panel); border: 1px solid var(--border); padding: 8px; overflow-x: auto; font-size: 13px; }
+button { padding: 8px 16px; font: inherit; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--fg); }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.row { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<h1>blescan sse</h1>
+<label for="cmd">Command</label>
+<select id="cmd"></select>
+<div id="fields"></div>
+<label for="json">JSON command <span class="hint">(edit directly if required)</span></label>
+<textarea id="json" rows="8"></textarea>
+<div class="row">
+<button class="primary" id="run">Run</button>
+<button id="reset">Reset</button>
+</div>
+<label>curl</label>
+<pre id="curl"></pre>
+<script>
+const ENDPOINT = {{ENDPOINT}};
+const COMMANDS = {{COMMANDS}};
+
+// Field types: list (one per line), int, float, str, bool
+const F = {
+  name: ['list', 'device name regex'],
+  device: ['list', 'device id'],
+  service: ['list', 'service uuid'],
+  characteristic: ['list', 'characteristic uuid'],
+  rssi: ['int', 'minimum RSSI'],
+  timeout: ['int', 'timeout (s)'],
+  decode: ['list', 'uuid::format'],
+  decode_file: ['list', 'decode file (on server)'],
+};
+const FIELDS = {
+  scan: {name: F.name, device: F.device, rssi: F.rssi, timeout: F.timeout, show_seen: ['bool', 'show seen devices']},
+  monitor: {name: F.name, device: F.device, rssi: F.rssi, timeout: F.timeout,
+    device_timeout: ['int', 'device timeout (s)', 5], update: ['int', 'update (ms)', 500]},
+  enumerate: {read: ['bool', 'read characteristic data'], name: F.name, device: F.device, service: F.service,
+    characteristic: F.characteristic, rssi: F.rssi, timeout: F.timeout, decode: F.decode,
+    decode_file: F.decode_file, max: ['int', 'max devices']},
+  poll: {interval: ['float', 'poll interval (s)', 5], name: F.name, device: F.device, service: F.service,
+    characteristic: F.characteristic, rssi: F.rssi, timeout: F.timeout, decode: F.decode, decode_file: F.decode_file},
+  notify: {name: F.name, device: F.device, service: F.service, characteristic: F.characteristic,
+    rssi: F.rssi, timeout: F.timeout, decode: F.decode, decode_file: F.decode_file},
+  write: {name: F.name, device: F.device, service: F.service,
+    characteristic: ['list', 'uuid::format=data'], rssi: F.rssi, timeout: F.timeout,
+    without_response: ['bool', 'write without response']},
+  write_read: {name: F.name, device: F.device, service: F.service,
+    characteristic: ['list', 'uuid::format=data'], rssi: F.rssi, timeout: F.timeout,
+    without_response: ['bool', 'write without response'], read_delay: ['int', 'read delay (ms)'],
+    decode: F.decode, decode_file: F.decode_file},
+  dump: {event: ['list', 'event type'], device: F.device, name: F.name, timeout: F.timeout},
+};
+
+const $ = (id) => document.getElementById(id);
+
+function buildForm(cmd, params) {
+  params = params || {};
+  const fields = $('fields');
+  fields.innerHTML = '';
+  for (const [k, [type, hint, def]] of Object.entries(FIELDS[cmd])) {
+    const v = params[k] !== undefined ? params[k] : def;
+    const div = document.createElement('div');
+    let input;
+    if (type === 'bool') {
+      div.className = 'check';
+      input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = !!v;
+      const label = document.createElement('label');
+      label.htmlFor = input.id = 'f_' + k;
+      label.style.margin = 0;
+      label.innerHTML = k + ' <span class="hint"></span>';
+      label.querySelector('.hint').textContent = hint;
+      div.append(input, label);
+    } else {
+      const label = document.createElement('label');
+      label.innerHTML = k + ' <span class="hint"></span>';
+      label.querySelector('.hint').textContent = hint + (type === 'list' ? ' - one per line' : '');
+      if (type === 'list') {
+        input = document.createElement('textarea');
+        input.rows = 2;
+        input.value = (v || []).join('\n');
+      } else {
+        input = document.createElement('input');
+        input.type = type === 'str' ? 'text' : 'number';
+        if (type === 'float') input.step = 'any';
+        input.value = v === undefined || v === null ? '' : v;
+      }
+      label.htmlFor = input.id = 'f_' + k;
+      div.append(label, input);
+    }
+    input.dataset.key = k;
+    input.dataset.type = type;
+    input.addEventListener('input', update);
+    fields.append(div);
+  }
+  update();
+}
+
+function formJson() {
+  const params = {};
+  for (const el of $('fields').querySelectorAll('[data-key]')) {
+    const k = el.dataset.key, t = el.dataset.type;
+    if (t === 'bool') params[k] = el.checked;
+    else if (t === 'list') params[k] = el.value.split('\n').map(s => s.trim()).filter(s => s);
+    else if (el.value.trim() !== '') params[k] = t === 'str' ? el.value : Number(el.value);
+  }
+  return {[$('cmd').value]: params};
+}
+
+function update() {
+  $('json').value = JSON.stringify(formJson(), null, 2);
+  updateCurl();
+}
+
+function updateCurl() {
+  let body;
+  try { body = JSON.stringify(JSON.parse($('json').value)); } catch (e) { body = '<invalid json>'; }
+  $('curl').textContent = "curl -N -d '" + body.replace(/'/g, "'\\''") + "' " + location.origin + ENDPOINT;
+}
+
+for (const c of COMMANDS) {
+  const o = document.createElement('option');
+  o.value = o.textContent = c;
+  $('cmd').append(o);
+}
+$('cmd').onchange = () => buildForm($('cmd').value);
+$('json').oninput = updateCurl;
+$('reset').onclick = () => { history.replaceState(null, '', location.pathname); buildForm($('cmd').value); };
+$('run').onclick = () => {
+  let cmd;
+  try { cmd = JSON.parse($('json').value); } catch (e) { alert('Invalid JSON: ' + e); return; }
+  location.href = '/debug/view.html#' + encodeURIComponent(JSON.stringify(cmd));
+};
+
+// Restore command from hash (link back from view page)
+let init = null;
+try { init = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch (e) {}
+const initCmd = init && Object.keys(init)[0];
+if (initCmd && COMMANDS.includes(initCmd)) {
+  $('cmd').value = initCmd;
+  buildForm(initCmd, init[initCmd]);
+} else if (COMMANDS.length) {
+  buildForm(COMMANDS[0]);
+}
+</script>
+</body>
+</html>

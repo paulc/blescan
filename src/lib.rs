@@ -10,6 +10,8 @@ pub mod notify;
 pub mod poll;
 pub mod scan;
 pub mod scanner;
+#[cfg(feature = "sse")]
+pub mod sse;
 pub mod types;
 pub mod util;
 pub mod write;
