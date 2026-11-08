@@ -4,6 +4,7 @@ use btleplug::platform::{Adapter, PeripheralId};
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::COMPANY_MAP;
 use crate::util::serialize_hex;
 
 pub struct EventWrapper(pub CentralEvent);
@@ -74,6 +75,7 @@ impl EventWrapper {
                     .iter()
                     .map(|(k, v)| ManufacturerData {
                         manufacturer_id: *k,
+                        company_name: COMPANY_MAP.get(k).copied(),
                         manufacturer_data: v.clone(),
                     })
                     .collect::<Vec<_>>();
@@ -164,6 +166,8 @@ pub struct ServiceData {
 #[derive(Debug, Clone, Serialize)]
 pub struct ManufacturerData {
     pub manufacturer_id: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub company_name: Option<&'static str>,
     #[serde(serialize_with = "serialize_hex")]
     pub manufacturer_data: Vec<u8>,
 }
@@ -181,6 +185,7 @@ impl std::fmt::Display for EventInfo {
                 for ManufacturerData {
                     manufacturer_id,
                     manufacturer_data,
+                    ..
                 } in manufacturer_data.iter()
                 {
                     writeln!(

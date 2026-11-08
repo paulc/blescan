@@ -36,6 +36,7 @@ td .chr { padding-left: 1em; word-break: normal; }
 td .muted { color: var(--muted); }
 .act { font-family: system-ui, sans-serif; font-size: 11px; padding: 0 5px; margin-left: 4px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); color: var(--accent); text-decoration: none; white-space: nowrap; cursor: pointer; }
 .act:hover { border-color: var(--accent); }
+.more { color: var(--accent); cursor: pointer; }
 dialog { color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; min-width: min(28em, 90vw); }
 dialog label { display: block; margin: 8px 0; }
 dialog input[type=text] { width: 100%; box-sizing: border-box; }
@@ -89,6 +90,9 @@ const LIST = name === 'monitor';
 // scan/monitor/dump rows are devices - show enumerate link
 const DEVICES = name === 'scan' || name === 'monitor' || name === 'dump';
 const TREE = '\u2514\u2500 ';
+const ELLIPSIS = '\u2026';
+// Max length of enumerate values before truncating
+const MAX_VALUE = 16;
 // Timeout for commands started from action links (s)
 const ACTION_TIMEOUT = 30;
 
@@ -161,23 +165,40 @@ function enumerateLink(id) {
   return actionLink('enumerate', {enumerate: {read: true, device: [id], timeout: ACTION_TIMEOUT, max: 1}});
 }
 
+// Action links for characteristic + properties without an action
 function charActions(row, c) {
-  const props = (c.properties || '').replace(/[\[\]]/g, '').split(',');
+  const props = (c.properties || '').replace(/[\[\]]/g, '').split(',').filter(p => p);
   const has = (p) => props.includes(p);
+  const covered = [];
   const base = {device: [row.flat.id], service: [c.service_uuid], characteristic: [c.uuid]};
   const e = (cmd && cmd.enumerate) || {};
   const decode = {decode: e.decode || [], decode_file: e.decode_file || []};
   const acts = [];
+  const add = (a, ps) => { if (a) { acts.push(a); covered.push(...ps); } };
   if (has('Read')) {
-    acts.push(actionLink('read', {enumerate: Object.assign({read: true, timeout: ACTION_TIMEOUT, max: 1}, base, decode)}));
+    add(actionLink('read', {enumerate: Object.assign({read: true, timeout: ACTION_TIMEOUT, max: 1}, base, decode)}), ['Read']);
   }
   if ((has('Write') || has('WriteNoResp')) && COMMANDS.includes('write')) {
-    const b = el('button', 'act', 'write');
+    const b = el('button', 'act', has('Write') ? 'write' : 'write (no resp)');
     b.onclick = (ev) => { ev.stopPropagation(); openWrite(row, c, !has('Write'), ev.metaKey || ev.ctrlKey); };
-    acts.push(b);
+    add(b, ['Write', 'WriteNoResp']);
   }
-  if (has('Notify') || has('Indicate')) acts.push(actionLink('notify', {notify: Object.assign({}, base, decode)}));
-  return acts.filter(a => a);
+  if (has('Notify') || has('Indicate')) {
+    add(actionLink(has('Notify') ? 'notify' : 'indicate', {notify: Object.assign({}, base, decode)}), ['Notify', 'Indicate']);
+  }
+  return {acts, rest: props.filter(p => !covered.includes(p))};
+}
+
+// Text truncated to MAX_VALUE with ellipsis to expand
+function truncated(text) {
+  const span = el('span', null, text);
+  if (text.length <= MAX_VALUE) return span;
+  span.textContent = text.slice(0, MAX_VALUE);
+  const more = el('span', 'more', ELLIPSIS);
+  more.title = 'Show all';
+  more.onclick = (e) => { e.stopPropagation(); span.textContent = text; };
+  span.append(more);
+  return span;
 }
 
 let writeTarget = null;
@@ -211,11 +232,23 @@ function renderServices(services, row) {
     div.append(sd);
     for (const c of Object.values(s.characteristics || {})) {
       const cd = el('div', 'chr');
-      cd.append(el('span', 'muted', TREE), el('b', null, shortUuid(c.uuid)), ' ', typeName(c.characteristic_type), ' ',
-        el('span', 'muted', c.properties || ''));
-      if (c.value !== undefined && c.value !== null) cd.append(' = ' + c.value);
-      if (c.decoded !== undefined && c.decoded !== null) cd.append(' ', el('b', null, JSON.stringify(c.decoded)));
-      if (name === 'enumerate') cd.append(...charActions(row, c));
+      cd.append(el('span', 'muted', TREE), el('b', null, shortUuid(c.uuid)), ' ', typeName(c.characteristic_type));
+      if (name === 'enumerate') {
+        // Show action links instead of properties (unless no action available)
+        const {acts, rest} = charActions(row, c);
+        if (rest.length) cd.append(' ', el('span', 'muted', '[' + rest.join(',') + ']'));
+        if (c.value !== undefined && c.value !== null) cd.append(' = ', truncated(c.value));
+        if (c.decoded !== undefined && c.decoded !== null) {
+          const d = truncated(JSON.stringify(c.decoded));
+          d.style.fontWeight = 'bold';
+          cd.append(' ', d);
+        }
+        cd.append(...acts);
+      } else {
+        cd.append(' ', el('span', 'muted', c.properties || ''));
+        if (c.value !== undefined && c.value !== null) cd.append(' = ' + c.value);
+        if (c.decoded !== undefined && c.decoded !== null) cd.append(' ', el('b', null, JSON.stringify(c.decoded)));
+      }
       div.append(cd);
     }
   }
@@ -233,17 +266,11 @@ function renderManufacturer(md) {
   return div;
 }
 
-// Dump advertisement data (manufacturer_id/service_id are raw - company name from device data)
-function renderAdvertisement(adv, row) {
+function renderServiceData(sd) {
   const div = el('div');
-  for (const m of adv.manufacturer_data || []) {
-    const known = (row.flat.manufacturer_data || []).find(d => d.id === m.manufacturer_id);
-    renderManufacturer([{id: m.manufacturer_id, company_name: known && known.company_name, data: m.manufacturer_data}])
-      .childNodes.forEach(n => div.append(n.cloneNode(true)));
-  }
-  for (const sd of adv.service_data || []) {
+  for (const s of sd) {
     const d = el('div');
-    d.append(el('b', null, shortUuid(sd.service_id)), ' ' + sd.service_data);
+    d.append(el('b', null, shortUuid(s.service_id)), ' ' + s.service_data);
     div.append(d);
   }
   return div;
@@ -254,7 +281,7 @@ function renderCell(c, r) {
   const v = r.flat[c];
   if (c === 'services' && v && typeof v === 'object' && !Array.isArray(v)) return [renderServices(v, r)];
   if (c === 'manufacturer_data' && Array.isArray(v)) return [renderManufacturer(v)];
-  if (c === 'advertisement' && v) return [renderAdvertisement(v, r)];
+  if (c === 'service_data' && Array.isArray(v)) return [renderServiceData(v)];
   if (c === 'id' && DEVICES && v) return [String(v), enumerateLink(v)].filter(x => x);
   return [cell(v)];
 }
@@ -265,8 +292,13 @@ function flattenDump(v) {
   const row = {event_type: e.event_type};
   Object.assign(row, e.device || {});
   if (e.state) row.state = e.state;
-  if (e.manufacturer_data) row.advertisement = {manufacturer_data: e.manufacturer_data};
-  if (e.service_data) row.advertisement = {service_data: e.service_data};
+  // Advertised manufacturer data (device manufacturer_data is empty in dump)
+  if (e.manufacturer_data) {
+    row.manufacturer_data = e.manufacturer_data.map(m => ({
+      id: m.manufacturer_id, company_name: m.company_name, data: m.manufacturer_data,
+    }));
+  }
+  if (e.service_data) row.service_data = e.service_data;
   return row;
 }
 
